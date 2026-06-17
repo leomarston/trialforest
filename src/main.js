@@ -39,7 +39,7 @@ const MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip
 const MONSTER_ATTACK_CLIP = 0;        // index of the attack/lunge clip
 const MONSTER_SPEED       = 9;        // slower than the player can run (escapable)
 const MONSTER_HEIGHT      = 2.4;      // big enough to clearly spot across the clearing
-const MONSTER_SPAWN       = { x: 0, z: -60 };
+const MONSTER_SPAWN       = { x: 0, z: -22 };  // right in front of the player at start
 const MONSTER_ATTACK_RANGE = 2.0;     // how close before it lunges
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
 
@@ -52,27 +52,57 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0xbfe3f0, 300, 950);
+// Dark, oppressive night — you can barely see past the reach of your torch.
+scene.background = new THREE.Color(0x05070d);
+scene.fog = new THREE.Fog(0x05070d, 6, 55);
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(0, PLAYER_HEIGHT, 0);
 
 // ----- Lighting ------------------------------------------------------------
-const hemi = new THREE.HemisphereLight(0xcfe9ff, 0x4a6b2f, 0.85);
+// Just enough cold ambient/moonlight to make out silhouettes — the torch does
+// the real work.
+const hemi = new THREE.HemisphereLight(0x223044, 0x05070d, 0.12);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xfff4e0, 1.5);
-sun.position.set(120, 180, 80);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 1;
-sun.shadow.camera.far = 600;
+const moon = new THREE.DirectionalLight(0x6b80b0, 0.18);
+moon.position.set(-80, 160, -60);
+moon.castShadow = true;
+moon.shadow.mapSize.set(2048, 2048);
+moon.shadow.camera.near = 1;
+moon.shadow.camera.far = 600;
 const s = 220;
-sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
-sun.shadow.camera.top = s;   sun.shadow.camera.bottom = -s;
-scene.add(sun);
-scene.add(sun.target);
+moon.shadow.camera.left = -s; moon.shadow.camera.right = s;
+moon.shadow.camera.top = s;   moon.shadow.camera.bottom = -s;
+scene.add(moon);
+scene.add(moon.target);
+
+// ----- Torch (toggle with F) -----------------------------------------------
+// A handheld spotlight parented to the camera so it always points where you
+// look, plus a faint warm point light so your hands/feet aren't pitch black.
+const torch = new THREE.SpotLight(0xffd8a0, 0, 90, Math.PI / 5, 0.35, 1.2);
+torch.position.set(0.2, -0.2, 0.2);
+torch.target.position.set(0, 0, -1);
+torch.castShadow = true;
+torch.shadow.mapSize.set(1024, 1024);
+torch.shadow.camera.near = 0.5;
+torch.shadow.camera.far = 90;
+const torchGlow = new THREE.PointLight(0xffb060, 0, 6, 2);
+torchGlow.position.set(0, -0.3, 0);
+
+camera.add(torch);
+camera.add(torch.target);
+camera.add(torchGlow);
+scene.add(camera); // so the camera-parented lights live in the scene graph
+
+let torchOn = true;
+const TORCH_INTENSITY = 5.0, TORCH_GLOW = 0.6;
+function setTorch(on) {
+  torchOn = on;
+  torch.intensity = on ? TORCH_INTENSITY : 0;
+  torchGlow.intensity = on ? TORCH_GLOW : 0;
+}
+setTorch(true);
 
 // ----- Controls ------------------------------------------------------------
 const controls = new PointerLockControls(camera, document.body);
@@ -96,7 +126,10 @@ const setKey = (e, down) => {
     case 'ShiftLeft': case 'ShiftRight': keys.run = down; break;
   }
 };
-document.addEventListener('keydown', (e) => setKey(e, true));
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyF' && !e.repeat) setTorch(!torchOn); // toggle the torch
+  setKey(e, true);
+});
 document.addEventListener('keyup',   (e) => setKey(e, false));
 
 // ----- Build the grass ground from the GLB ---------------------------------
