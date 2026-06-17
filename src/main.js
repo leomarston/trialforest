@@ -6,7 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 // ----- World constants -----------------------------------------------------
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
-const PLAYER_HEIGHT = 1.85;
+const PLAYER_HEIGHT = 2.05;
 const STEP_UP       = 0.7;   // tallest step the player can climb (stairs)
 const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
 const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
