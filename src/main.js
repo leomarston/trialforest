@@ -40,7 +40,7 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 // if the wrong motion plays.
 let   MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip ([ and ] cycle it live)
 const MONSTER_SPEED       = 5.5;      // a touch slower than your run (escapable)
-const MONSTER_HEIGHT      = 2.4;      // big enough to clearly spot across the clearing
+const MONSTER_HEIGHT      = 1.85;     // the same size as the player
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
 const MONSTER_MAX         = 6;        // how many hunt you at once
 const MONSTER_SPAWN_MIN   = 14;       // they appear out of the dark, this close…
@@ -567,7 +567,9 @@ function updateEffects(dt) {
 }
 
 // ----- The gun (viewmodel + shooting) --------------------------------------
-let gun = null, gunMixer = null, fireAction = null;
+// We don't use the model's built-in Fire animation — the recoil kick below is
+// our own.
+let gun = null;
 let fireCooldown = 0;
 const muzzleFlash = new THREE.PointLight(0xffd070, 0, 12, 2);
 muzzleFlash.position.set(0.16, -0.12, -0.7);
@@ -580,14 +582,6 @@ function buildGun(gltf) {
   gun.position.copy(GUN_POS);
   gun.rotation.copy(GUN_ROT);
   camera.add(gun); // parent to the camera so it's a first-person viewmodel
-
-  const fire = (gltf.animations || []).find((c) => /fire/i.test(c.name)) || gltf.animations?.[0];
-  if (fire) {
-    gunMixer = new THREE.AnimationMixer(gun);
-    fireAction = gunMixer.clipAction(fire);
-    fireAction.setLoop(THREE.LoopOnce);
-    fireAction.clampWhenFinished = true;
-  }
 }
 
 const _shootRay = new THREE.Raycaster();
@@ -598,9 +592,8 @@ function shoot() {
   if (fireCooldown > 0) return;
   fireCooldown = FIRE_COOLDOWN;
 
-  // Muzzle flash + fire animation + recoil kick.
+  // Muzzle flash + our own recoil kick (no model animation).
   muzzleFlash.intensity = 12;
-  if (fireAction) { fireAction.reset(); fireAction.play(); }
   if (gun) gun.position.z = GUN_POS.z + 0.06; // kicked back; eased forward in update
 
   // Hitscan from the centre of the screen.
@@ -617,7 +610,6 @@ function updateGun(dt) {
   if (fireCooldown > 0) fireCooldown -= dt;
   if (muzzleFlash.intensity > 0) muzzleFlash.intensity = Math.max(0, muzzleFlash.intensity - 60 * dt);
   if (gun) gun.position.z += (GUN_POS.z - gun.position.z) * Math.min(1, dt * 12); // ease recoil back
-  if (gunMixer) gunMixer.update(dt);
 }
 
 document.addEventListener('mousedown', (e) => {
