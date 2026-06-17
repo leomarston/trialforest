@@ -739,10 +739,10 @@ function updateHealthBar() {
   if (bloodVigEl) bloodVigEl.style.opacity = (1 - playerHP / PLAYER_MAX_HP).toFixed(2);
 }
 
-function hurtPlayer() {
+function hurtPlayer(amount = 1) {
   if (playerDead) return;
   sfx.damage.play();
-  playerHP = Math.max(0, playerHP - 1);
+  playerHP = Math.max(0, playerHP - amount);
   updateHealthBar();
   if (hurtEl) { hurtEl.classList.remove('flash'); void hurtEl.offsetWidth; hurtEl.classList.add('flash'); }
   if (playerHP <= 0) die();
@@ -781,12 +781,27 @@ function spawnMonster(angleOverride) {
   const root = cloneSkinned(monsterTemplate.scene);
   root.scale.setScalar(monsterTemplate.scale);
 
+  // 1 in 10 is the red breed: faster and hits harder.
+  const red = Math.random() < 0.1;
+
   const hitMeshes = [];
   root.traverse((o) => {
     if (o.isMesh || o.isSkinnedMesh) {
       o.castShadow = true;
       o.frustumCulled = false;
       hitMeshes.push(o); // bullets test against these
+      if (red) {
+        // Clone materials for this instance so only the red one is tinted.
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const tinted = mats.map((m) => {
+          if (!m) return m;
+          const c = m.clone();
+          if (c.color) c.color.setHex(0xc02020);   // multiplies the texture toward blood-red
+          if (c.emissive) c.emissive.setHex(0x300404);
+          return c;
+        });
+        o.material = Array.isArray(o.material) ? tinted : tinted[0];
+      }
     }
   });
 
@@ -804,9 +819,9 @@ function spawnMonster(angleOverride) {
   const clips = monsterTemplate.clips;
   const clip = clips[MONSTER_CHASE_CLIP] || clips[0];
   let action = null;
-  if (clip) { action = mixer.clipAction(clip); action.time = Math.random() * clip.duration; action.play(); }
+  if (clip) { action = mixer.clipAction(clip); action.time = Math.random() * clip.duration; if (red) action.timeScale = 2; action.play(); }
 
-  monsters.push({ root, mixer, action, hitMeshes });
+  monsters.push({ root, mixer, action, hitMeshes, speed: MONSTER_SPEED * (red ? 2 : 1), dmg: red ? 2 : 1 });
 }
 
 // Seed one monster at the start; the rest arrive every 5 seconds up to the max.
@@ -872,7 +887,7 @@ function updateMonsters(dt) {
 
   if (damageTimer > 0) damageTimer -= dt;
   const p = controls.getObject().position;
-  let touched = false;
+  let touched = 0; // 0 = not touched; otherwise the hardest hit this frame
   for (const m of monsters) {
     _toPlayer.set(p.x - m.root.position.x, 0, p.z - m.root.position.z);
     const dist = _toPlayer.length() || 1;
@@ -889,7 +904,7 @@ function updateMonsters(dt) {
     }
 
     if (dist > MONSTER_TOUCH) {                  // walk relentlessly toward the player
-      const step = MONSTER_SPEED * dt;
+      const step = m.speed * dt;                 // red breed moves twice as fast
       let hx = _toPlayer.x / dist, hz = _toPlayer.z / dist;
 
       // Steer around houses, then collide/slide and climb their steps.
@@ -908,12 +923,12 @@ function updateMonsters(dt) {
       m.root.position.y = floor + monsterTemplate.footY;
     } else {
       m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
-      touched = true;                            // close enough to claw at you
+      touched = Math.max(touched, m.dmg);        // close enough to claw — track its damage
     }
     m.mixer.update(dt);
   }
 
-  if (touched && damageTimer <= 0) { hurtPlayer(); damageTimer = DAMAGE_COOLDOWN; }
+  if (touched && damageTimer <= 0) { hurtPlayer(touched); damageTimer = DAMAGE_COOLDOWN; }
 }
 
 function killMonster(m) {
