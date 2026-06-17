@@ -210,10 +210,24 @@ const sfx = {
   growl:   makeSfx('monstergrowl.mp3',{ volume: 0.55, pool: 3 }),
 };
 
+// Looping horror ambience. Browsers block autoplay until a user gesture, so it
+// kicks off on the first pointer-lock (the click to start the game).
+const music = new Audio('./assets/sfx/horror_background.mp3');
+music.loop = true;
+music.volume = 0.35;
+music.preload = 'auto';
+let musicStarted = false;
+function startMusic() {
+  if (musicStarted) return;
+  musicStarted = true;
+  music.play().catch(() => { musicStarted = false; }); // retry on a later gesture if blocked
+}
+
 overlay.addEventListener('click', () => { if (!playerDead) controls.lock(); });
 controls.addEventListener('lock',   () => {
   overlay.style.display = 'none';
   document.body.classList.add('playing'); // show crosshair, hearts + kill count
+  startMusic();                            // begin the looping ambience
 });
 controls.addEventListener('unlock', () => {
   if (!playerDead) overlay.style.display = 'flex'; // (death screen handles the dead case)
