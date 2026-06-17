@@ -26,9 +26,10 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 const MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip
 const MONSTER_ATTACK_CLIP = 0;        // index of the attack/lunge clip
 const MONSTER_SPEED       = 9;        // slower than the player can run (escapable)
+const MONSTER_HEIGHT      = 1.2;      // shorter than the player (eye height 1.7)
 const MONSTER_SPAWN       = { x: 0, z: -60 };
-const MONSTER_ATTACK_RANGE = 2.6;     // how close before it lunges
-const MONSTER_FACING      = Math.PI;  // yaw offset so it faces the player (flip if backwards)
+const MONSTER_ATTACK_RANGE = 2.0;     // how close before it lunges
+const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
 
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
@@ -262,8 +263,12 @@ function buildMonster(gltf) {
     if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; o.frustumCulled = false; }
   });
 
-  // Sit its feet on the ground, then drop it at the spawn point.
-  const box = new THREE.Box3().setFromObject(monster);
+  // Scale it down to be shorter than the player, then sit its feet on the
+  // ground and drop it at the spawn point.
+  let box = new THREE.Box3().setFromObject(monster);
+  const size = new THREE.Vector3(); box.getSize(size);
+  monster.scale.setScalar(MONSTER_HEIGHT / size.y);
+  box = new THREE.Box3().setFromObject(monster); // recompute after scaling
   monster.position.set(MONSTER_SPAWN.x, -box.min.y, MONSTER_SPAWN.z);
   scene.add(monster);
 
