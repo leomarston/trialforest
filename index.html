@@ -58,22 +58,20 @@
       text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; }
     body.playing #aniclip { display: block; }
 
-    /* Health bar, bottom-centre. */
+    /* Health bar (red) — bottom-centre rectangle. */
     #healthbar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-      z-index: 5; display: none; width: 260px; height: 16px; border-radius: 9px;
+      z-index: 5; display: none; width: 260px; height: 16px;
       background: rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.35);
       box-shadow: 0 2px 8px rgba(0,0,0,.6); overflow: hidden; pointer-events: none; }
-    #healthfill { height: 100%; width: 100%;
-      background: linear-gradient(90deg, #b81414, #36c43a);
-      transition: width .25s ease; }
+    #healthfill { height: 100%; width: 100%; background: #ff0000; transition: width .25s ease; }
     body.playing #healthbar { display: block; }
 
-    /* Sprint/stamina — minimal sliver, bottom-left. */
-    #staminabar { position: fixed; bottom: 26px; left: 16px; z-index: 5; display: none;
-      width: 150px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12);
-      pointer-events: none; }
-    #staminafill { height: 100%; width: 100%; border-radius: 2px;
-      background: #8fe6c4; box-shadow: 0 0 6px rgba(143,230,196,.55); transition: width .08s linear; }
+    /* Stamina bar (blue) — same rectangle, stacked just above the health bar. */
+    #staminabar { position: fixed; bottom: 42px; left: 50%; transform: translateX(-50%);
+      z-index: 5; display: none; width: 260px; height: 16px;
+      background: rgba(0,0,0,.55); border: 2px solid rgba(255,255,255,.35);
+      box-shadow: 0 2px 8px rgba(0,0,0,.6); overflow: hidden; pointer-events: none; }
+    #staminafill { height: 100%; width: 100%; background: #1e6bff; transition: width .08s linear; }
     body.playing #staminabar { display: block; }
 
     /* Ammo counter, bottom-right. */
@@ -299,6 +297,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=36"></script>
+  <script type="module" src="./src/main.js?v=37"></script>
 </body>
 </html>

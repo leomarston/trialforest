@@ -6,7 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 // ----- World constants -----------------------------------------------------
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
-const PLAYER_HEIGHT = 2.7;   // tall enough to see through the house windows
+const PLAYER_HEIGHT = 3.2;   // taller viewpoint
 const STEP_UP       = 1.0;   // tallest step the player can climb (stairs/landings)
 const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
 const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
@@ -542,7 +542,8 @@ function toggleNearestDoor() {
 const _ray = new THREE.Raycaster();
 // Sample above STEP_UP so a stair riser (or the top landing) isn't mistaken for
 // a wall — short steps pass through and the floor-follow lifts the player up.
-const _heights = [STEP_UP + 0.3, 1.3, 1.9, 2.5]; // shin / knee / chest / head
+const _heights = [STEP_UP + 0.3, 1.3, 1.8, 2.2]; // shin..head; capped at 2.2 so the
+                                                 // taller player still fits every doorway
 const _offsets = [-PLAYER_RADIUS, -PLAYER_RADIUS * 0.5, 0, PLAYER_RADIUS * 0.5, PLAYER_RADIUS];
 let _activeColliders = [];             // houses near the player, refreshed each frame
 let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
