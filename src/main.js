@@ -42,6 +42,12 @@ const houseZones = [];       // footprints trees must keep clear of
 const houseColliders = [];   // { obj, x, z } — house meshes the player collides with
 const PLAYER_RADIUS  = 0.6;  // how far the player's body keeps off the walls
 
+// Things to hide when far away (purely for performance). The cull radius sits
+// well beyond the fog (which is solid black by ~55 units), so anything we hide
+// is already invisible — the player never sees it pop.
+const cullables = [];        // { obj, x, z }
+const CULL_DIST2 = 82 * 82;
+
 // ----- Hill ring constants -------------------------------------------------
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
 const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
@@ -164,17 +170,21 @@ function updateBatteryHUD() {
   refreshWarnings();
 }
 
-// Diegetic low-resource warnings, in the game's voice (not generic UI lines).
+// Diegetic low-resource warnings — pop up once in the centre, then fade.
 const warnEl = document.getElementById('warn');
-function refreshWarnings() {
+function showToast(text) {
   if (!warnEl) return;
-  const lines = [];
-  if (typeof spareBatteries === 'number' && spareBatteries <= 0)
-    lines.push('Your light is dying — the dark is hungry out here.');
-  if (typeof reserveAmmo === 'number' && reserveAmmo <= 0)
-    lines.push('Down to your last rounds. Make them count.');
-  warnEl.innerHTML = lines.join('<br>');
-  warnEl.classList.toggle('show', lines.length > 0);
+  warnEl.textContent = text;
+  warnEl.classList.remove('show'); void warnEl.offsetWidth; // restart the animation
+  warnEl.classList.add('show');
+}
+let wasLowAmmo = false, wasLowBatt = false;
+function refreshWarnings() {
+  const lowAmmo = typeof reserveAmmo === 'number' && reserveAmmo <= 0;
+  const lowBatt = typeof spareBatteries === 'number' && spareBatteries <= 0;
+  if (lowAmmo && !wasLowAmmo)      showToast('Down to your last rounds.');
+  else if (lowBatt && !wasLowBatt) showToast('Your light is dying.');
+  wasLowAmmo = lowAmmo; wasLowBatt = lowBatt;
 }
 
 function applyTorch() {
@@ -213,7 +223,8 @@ const loadingEl = document.getElementById('loading');
 const menuEl = document.getElementById('menu');
 document.getElementById('btn-start')?.addEventListener('click', () => {
   if (menuEl) menuEl.style.display = 'none';
-  boot(); // only now do we start loading the game
+  controls.lock();  // grab the pointer now (valid gesture) so we drop straight in
+  boot();           // start loading the game
 });
 
 // ----- Sound effects --------------------------------------------------------
@@ -410,6 +421,7 @@ function buildHills(grassMaterial) {
       mound.castShadow = false;   // distant backdrop — no need to cast shadows
       mound.receiveShadow = true;
       hills.add(mound);
+      cullables.push({ obj: mound, x: Math.cos(a) * r, z: Math.sin(a) * r });
     }
   }
   scene.add(hills);
@@ -485,6 +497,7 @@ function placeStructures(gltf, spots, height) {
     pivot.rotation.y = spot.rot;
     scene.add(pivot);
     pivot.updateWorldMatrix(true, true); // raycasts need up-to-date world matrices
+    cullables.push({ obj: pivot, x: spot.x, z: spot.z });
 
     // Reserve a clearing so the forest doesn't grow through the walls.
     houseZones.push({ x: spot.x, z: spot.z, r: footprint * 0.6 + 6 });
@@ -739,6 +752,7 @@ async function buildForest(treeGltf) {
     pivot.rotation.y = rng() * Math.PI * 2;
     pivot.scale.setScalar(baseScale * (0.75 + rng() * 0.6)); // size variety
     forest.add(pivot);
+    cullables.push({ obj: pivot, x: px, z: pz }); // hide when far (beyond the fog)
 
     // Each tree sways on its own phase and speed so the canopy never pulses
     // in lockstep — that's what makes a crowd of trees read as a living forest.
@@ -1299,6 +1313,16 @@ function update(dt) {
 }
 
 // ----- Loop ----------------------------------------------------------------
+// Hide objects beyond the fog so they aren't rendered (throttled ~10×/sec).
+let _cullFrame = 0;
+function cullDistant() {
+  if ((_cullFrame++ % 6) !== 0) return;
+  const p = controls.getObject().position;
+  for (const c of cullables) {
+    c.obj.visible = (c.x - p.x) ** 2 + (c.z - p.z) ** 2 < CULL_DIST2;
+  }
+}
+
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
@@ -1319,6 +1343,7 @@ function animate() {
   updatePickups(dt);                                            // ammo / health / batteries
   updateBattery(dt);                                            // torch drains the battery
   for (let i = 0; i < doors.length; i++) doors[i].mixer.update(dt); // door swings
+  cullDistant();                                                // hide far-off (fogged) objects
   renderer.render(scene, camera);
 }
 
@@ -1347,7 +1372,10 @@ async function loadStep(url, onLoad) {
 
 function start() {
   loadingEl.style.display = 'none';
-  overlay.style.display = 'flex';
+  // Drop straight into play. The overlay only shows if the pointer-lock didn't
+  // stick (browser dropped it during the load) — a one-click fallback.
+  if (controls.isLocked) overlay.style.display = 'none';
+  else overlay.style.display = 'flex';
   updateHealthBar();
   updateStaminaBar();
   updateAmmo();

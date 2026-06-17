@@ -97,13 +97,19 @@
         radial-gradient(circle at 0% 100%,   rgba(110,0,0,.55), transparent 30%),
         radial-gradient(circle at 100% 0%,   rgba(110,0,0,.55), transparent 30%); }
 
-    /* Diegetic warnings — low, faint, blood-toned. */
-    #warn { position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 6;
-      display: none; text-align: center; color: #b33b2c; pointer-events: none;
-      font-family: 'Architects Daughter', system-ui, sans-serif; font-size: 20px;
-      letter-spacing: .06em; line-height: 1.5; text-shadow: 0 2px 8px rgba(0,0,0,.9);
-      opacity: .9; }
-    body.playing #warn.show { display: block; }
+    /* Diegetic warnings — pop up big in the centre, then fade out. */
+    #warn { position: fixed; top: 42%; left: 50%; transform: translate(-50%, -50%); z-index: 6;
+      text-align: center; color: #b33b2c; pointer-events: none; opacity: 0;
+      font-family: 'Architects Daughter', system-ui, sans-serif;
+      font-size: clamp(30px, 4.5vw, 56px); letter-spacing: .06em;
+      text-shadow: 0 3px 12px rgba(0,0,0,.9); white-space: nowrap; }
+    #warn.show { animation: warnpop 2.6s ease forwards; }
+    @keyframes warnpop {
+      0%   { opacity: 0; transform: translate(-50%,-50%) scale(.85); }
+      12%  { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+      72%  { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%,-50%) scale(1.06); }
+    }
 
     /* Death screen. */
     #death { position: fixed; inset: 0; z-index: 30; display: none;
@@ -293,6 +299,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=35"></script>
+  <script type="module" src="./src/main.js?v=36"></script>
 </body>
 </html>
