@@ -641,7 +641,7 @@ function floorG(objs, x, z, feet, stepUp) {
 // ----- Build the forest from the animated tree GLB -------------------------
 const mixers = [];
 
-function buildForest(treeGltf) {
+async function buildForest(treeGltf) {
   const template = treeGltf.scene;
   template.updateWorldMatrix(true, true);
 
@@ -652,6 +652,35 @@ function buildForest(treeGltf) {
   const center = new THREE.Vector3(); box.getCenter(center);
   const baseScale = TREE_HEIGHT / size.y;
   const clip = treeGltf.animations && treeGltf.animations[0];
+
+  // The tree uses KHR_materials_pbrSpecularGlossiness, which modern three.js no
+  // longer reads — so the diffuse colour+alpha textures get dropped, leaving the
+  // tree white and the leaf cutout with no alpha (paper rectangles). Pull those
+  // diffuse textures out of the GLB by hand and apply them as the base map.
+  const DIFFUSE_INDEX = { Bark: 0, Leaf: 3, Branch: 7 };
+  const parser = treeGltf.parser;
+  if (parser) {
+    const seen = new Set();
+    const jobs = [];
+    template.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m || seen.has(m.uuid)) continue;
+        seen.add(m.uuid);
+        const di = DIFFUSE_INDEX[m.name];
+        if (di === undefined) continue;
+        jobs.push(parser.getDependency('texture', di).then((tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.flipY = false;            // glTF textures are not flipped
+          m.map = tex;
+          if (m.color) m.color.setHex(0xffffff); // show the texture's true colours
+          m.needsUpdate = true;
+        }).catch(() => {}));
+      }
+    });
+    await Promise.all(jobs);
+  }
 
   template.traverse((o) => {
     if (!o.isMesh) return;
@@ -1311,7 +1340,7 @@ function advanceLoad() {
   if (loadFillEl) loadFillEl.style.width = `${Math.min(100, (loadDone / LOAD_STEPS) * 100)}%`;
 }
 async function loadStep(url, onLoad) {
-  try { onLoad(await load(url)); }
+  try { await onLoad(await load(url)); }
   catch (err) { console.error('Failed to load', url, err); }
   finally { advanceLoad(); }
 }
