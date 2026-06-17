@@ -16,16 +16,16 @@ const JUMP_VEL      = 6.0;   // a small hop
 const GRAVITY       = 20;    // fall acceleration
 
 // ----- Forest constants ----------------------------------------------------
-const TREE_COUNT     = 280;  // a sparser forest — room to breathe between trees
+const TREE_COUNT     = 170;  // fewer clones = much faster load, still a full forest
 const FOREST_RADIUS  = 340;  // trees fill the play area up to the foot of the hills
 const CLEARING       = 10;   // open breathing room around the player's start
 const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 
 // ----- Structure constants (count + places randomised each game) ------------
 const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
-const HOUSE_COUNT    = [11, 16]; // random count range per game (more, now that the quonset is gone)
+const HOUSE_COUNT    = [8, 12];  // random count range per game
 const HUT_HEIGHT     = 12;   // target height of a wooden hut (a bit bigger now)
-const HUT_COUNT      = [12, 18];
+const HUT_COUNT      = [9, 13];
 const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // Tiny seeded PRNG (mulberry32) — used to lay the forest out the same each game.
 function mulberry32(seed) {
