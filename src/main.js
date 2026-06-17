@@ -19,6 +19,17 @@ const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
 const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
 
+// ----- Monster constants ---------------------------------------------------
+// The GLB ships 18 animation clips, but their names are GBK-garbled and can't
+// be read, so the chase/attack clips are selected by index — tweak these two
+// if the wrong motion plays.
+const MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip
+const MONSTER_ATTACK_CLIP = 0;        // index of the attack/lunge clip
+const MONSTER_SPEED       = 9;        // slower than the player can run (escapable)
+const MONSTER_SPAWN       = { x: 0, z: -60 };
+const MONSTER_ATTACK_RANGE = 2.6;     // how close before it lunges
+const MONSTER_FACING      = Math.PI;  // yaw offset so it faces the player (flip if backwards)
+
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -229,6 +240,63 @@ function buildForest(treeGltf) {
   }
 }
 
+// ----- The monster that hunts the player -----------------------------------
+let monster = null;
+let monsterMixer = null;
+const monsterActions = {};
+let monsterState = '';
+
+function setMonsterAction(name, fade = 0.25) {
+  const next = monsterActions[name];
+  if (!next || monsterState === name) return;
+  for (const key in monsterActions) {
+    if (monsterActions[key] !== next) monsterActions[key].fadeOut(fade);
+  }
+  next.reset().fadeIn(fade).play();
+  monsterState = name;
+}
+
+function buildMonster(gltf) {
+  monster = gltf.scene;
+  monster.traverse((o) => {
+    if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; o.frustumCulled = false; }
+  });
+
+  // Sit its feet on the ground, then drop it at the spawn point.
+  const box = new THREE.Box3().setFromObject(monster);
+  monster.position.set(MONSTER_SPAWN.x, -box.min.y, MONSTER_SPAWN.z);
+  scene.add(monster);
+
+  const clips = gltf.animations || [];
+  const pick = (i) => clips[i] || clips[0];
+  monsterMixer = new THREE.AnimationMixer(monster);
+  monsterActions.chase  = monsterMixer.clipAction(pick(MONSTER_CHASE_CLIP));
+  monsterActions.attack = monsterMixer.clipAction(pick(MONSTER_ATTACK_CLIP));
+  setMonsterAction('chase');
+}
+
+const _toPlayer = new THREE.Vector3();
+function updateMonster(dt) {
+  if (!monster) return;
+  const p = controls.getObject().position;
+  _toPlayer.set(p.x - monster.position.x, 0, p.z - monster.position.z);
+  const dist = _toPlayer.length();
+
+  // Always turn to face the player.
+  monster.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
+
+  if (dist > MONSTER_ATTACK_RANGE) {
+    setMonsterAction('chase');
+    const step = Math.min(MONSTER_SPEED * dt, dist - MONSTER_ATTACK_RANGE);
+    monster.position.x += (_toPlayer.x / dist) * step;
+    monster.position.z += (_toPlayer.z / dist) * step;
+  } else {
+    setMonsterAction('attack'); // close enough — lunge
+  }
+
+  monsterMixer.update(dt);
+}
+
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -265,6 +333,7 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
   for (let i = 0; i < mixers.length; i++) mixers[i].update(dt); // sway the trees
+  updateMonster(dt);                                            // hunt the player
   renderer.render(scene, camera);
 }
 
@@ -312,6 +381,15 @@ function start() {
     buildForest(tree);
   } catch (err) {
     console.error('Failed to load tree GLB:', err); // grass still works without trees
+  }
+
+  // 3) The monster that chases the player.
+  try {
+    loadingEl.textContent = 'Waking the monster…';
+    const zombie = await load('./assets/zombie_licker.glb');
+    buildMonster(zombie);
+  } catch (err) {
+    console.error('Failed to load monster GLB:', err);
   }
 
   start();
