@@ -19,13 +19,23 @@ const FOREST_RADIUS  = 340;  // trees fill the play area up to the foot of the h
 const CLEARING       = 10;   // open breathing room around the player's start
 const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 
-// ----- Structure constants (placed at random each game) ---------------------
+// ----- Structure constants (count + places randomised each game) ------------
 const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
-const HOUSE_COUNT    = 6;    // how many houses spawn (slightly more than before)
+const HOUSE_COUNT    = [7, 11];  // random count range per game
 const HUT_HEIGHT     = 9;    // target height of a wooden hut
-const HUT_COUNT      = 7;
+const HUT_COUNT      = [8, 12];
 const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
-const QUONSET_COUNT  = 5;
+const QUONSET_COUNT  = [5, 8];
+const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
+// Tiny seeded PRNG (mulberry32) — used to lay the forest out the same each game.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const houseZones = [];       // footprints trees must keep clear of
 const houseColliders = [];   // { obj, x, z } — house meshes the player collides with
 const PLAYER_RADIUS  = 0.6;  // how far the player's body keeps off the walls
@@ -359,15 +369,15 @@ function genSpots(count, minDist = 48) {
 
 // ----- Place the structures at random spots --------------------------------
 function buildHouses(houseGltf) {
-  placeStructures(houseGltf, genSpots(HOUSE_COUNT, 55), HOUSE_HEIGHT);
+  placeStructures(houseGltf, genSpots(randInt(HOUSE_COUNT[0], HOUSE_COUNT[1]), 55), HOUSE_HEIGHT);
 }
 
 function buildHuts(hutGltf) {
-  placeStructures(hutGltf, genSpots(HUT_COUNT, 44), HUT_HEIGHT);
+  placeStructures(hutGltf, genSpots(randInt(HUT_COUNT[0], HUT_COUNT[1]), 44), HUT_HEIGHT);
 }
 
 function buildQuonsets(gltf) {
-  placeStructures(gltf, genSpots(QUONSET_COUNT, 44), QUONSET_HEIGHT);
+  placeStructures(gltf, genSpots(randInt(QUONSET_COUNT[0], QUONSET_COUNT[1]), 44), QUONSET_HEIGHT);
 }
 
 // Openable doors (press E): { mixer, action, dur, x, z, open }
@@ -598,10 +608,14 @@ function buildForest(treeGltf) {
   const forest = new THREE.Group();
   scene.add(forest);
 
+  // Seeded RNG so the forest is laid out identically every game (only the
+  // houses move around — the trees stay put).
+  const rng = mulberry32(0x7eed);
+
   for (let i = 0; i < TREE_COUNT; i++) {
     // Even spread across a disk (sqrt keeps density uniform), with a clearing.
-    const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
-    const a = Math.random() * Math.PI * 2;
+    const r = CLEARING + Math.sqrt(rng()) * (FOREST_RADIUS - CLEARING);
+    const a = rng() * Math.PI * 2;
     const px = Math.cos(a) * r, pz = Math.sin(a) * r;
 
     // Keep the house clearings clear — skip any tree landing on a footprint.
@@ -619,8 +633,8 @@ function buildForest(treeGltf) {
     const pivot = new THREE.Group();
     pivot.add(inst);
     pivot.position.set(px, 0, pz);
-    pivot.rotation.y = Math.random() * Math.PI * 2;
-    pivot.scale.setScalar(baseScale * (0.75 + Math.random() * 0.6)); // size variety
+    pivot.rotation.y = rng() * Math.PI * 2;
+    pivot.scale.setScalar(baseScale * (0.75 + rng() * 0.6)); // size variety
     forest.add(pivot);
 
     // Each tree sways on its own phase and speed so the canopy never pulses
@@ -628,9 +642,9 @@ function buildForest(treeGltf) {
     if (clip) {
       const mixer = new THREE.AnimationMixer(inst);
       const action = mixer.clipAction(clip);
-      action.timeScale = 0.6 + Math.random() * 0.7;
+      action.timeScale = 0.6 + rng() * 0.7;
       action.play();
-      action.time = Math.random() * clip.duration;
+      action.time = rng() * clip.duration;
       mixers.push({ mixer, x: px, z: pz }); // position lets us skip far-off trees
     }
   }
