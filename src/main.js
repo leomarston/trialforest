@@ -731,6 +731,7 @@ function updateMonsters(dt) {
 
 function killMonster(m) {
   sfx.death.play();
+  dropLoot(m.root.position.x, m.root.position.z); // roll the loot table
   explodeAt(m.root.position);
   scene.remove(m.root);
   m.mixer.stopAllAction();
@@ -876,9 +877,8 @@ document.addEventListener('mousedown', (e) => {
   if (e.button === 0 && controls.isLocked) shoot();
 });
 
-// ----- Pickups scattered around the map (ammo boxes + medkits) --------------
+// ----- Pickups dropped by monsters (not scattered on the map) --------------
 const pickups = [];
-const ammoTimers = { ammo: 0, health: 0, battery: 0 };
 
 // Glowing brass ammo box.
 const _ammoGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
@@ -916,10 +916,8 @@ function makeBattery() {
   return g;
 }
 
-function spawnPickup(type) {
-  const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
-  const a = Math.random() * Math.PI * 2;
-  const x = Math.cos(a) * r, z = Math.sin(a) * r;
+// Drop a pickup of `type` at a world position (where a monster died).
+function spawnPickup(type, x, z) {
   const obj = type === 'health' ? makeMedkit()
             : type === 'battery' ? makeBattery()
             : new THREE.Mesh(_ammoGeo, _ammoMat);
@@ -928,24 +926,14 @@ function spawnPickup(type) {
   pickups.push({ obj, x, z, baseY: 0.6, type });
 }
 
-function countType(type) {
-  let n = 0;
-  for (const pk of pickups) if (pk.type === type) n++;
-  return n;
-}
-
-function topUp(type, max, respawn, dt) {
-  if (countType(type) < max) {
-    ammoTimers[type] -= dt;
-    if (ammoTimers[type] <= 0) { spawnPickup(type); ammoTimers[type] = respawn; }
-  }
+// Roll the monster's loot table when it dies (drops only — never on the map).
+function dropLoot(x, z) {
+  if (Math.random() < 0.10) spawnPickup('health',  x + 0.6, z);        // heart   1/10
+  if (Math.random() < 0.10) spawnPickup('ammo',    x - 0.6, z);        // bullets 1/10
+  if (Math.random() < 0.05) spawnPickup('battery', x, z + 0.6);        // energy  1/20
 }
 
 function updatePickups(dt) {
-  topUp('ammo',    AMMO_PICKUPS,    AMMO_RESPAWN,    dt);
-  topUp('health',  HEALTH_PICKUPS,  HEALTH_RESPAWN,  dt);
-  topUp('battery', BATTERY_PICKUPS, BATTERY_RESPAWN, dt);
-
   const p = controls.getObject().position;
   for (let i = pickups.length - 1; i >= 0; i--) {
     const pk = pickups[i];
@@ -966,12 +954,6 @@ function updatePickups(dt) {
       pickups.splice(i, 1);
     }
   }
-}
-
-function seedPickups() {
-  for (let i = 0; i < AMMO_PICKUPS; i++)    spawnPickup('ammo');
-  for (let i = 0; i < HEALTH_PICKUPS; i++)  spawnPickup('health');
-  for (let i = 0; i < BATTERY_PICKUPS; i++) spawnPickup('battery');
 }
 
 // ----- Movement with boundary clamp ----------------------------------------
@@ -1080,7 +1062,6 @@ function start() {
   updateStaminaBar();
   updateAmmo();
   updateBatteryHUD();
-  seedPickups();
   animate();
 }
 
