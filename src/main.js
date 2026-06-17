@@ -31,6 +31,16 @@ const houseZones = [];       // footprints trees must keep clear of
 const houseColliders = [];   // { obj, x, z } — house meshes the player collides with
 const PLAYER_RADIUS  = 0.6;  // how far the player's body keeps off the walls
 
+// ----- Wooden hut constants -------------------------------------------------
+const HUT_HEIGHT = 9;        // target height of a wooden hut (smaller than the houses)
+const HUT_SPOTS = [          // spots to drop wooden huts (away from the houses)
+  { x:  -60, z:  -60, rot:  0.8 },
+  { x:  200, z:   90, rot: -0.6 },
+  { x:  -40, z:  210, rot:  2.0 },
+  { x:  120, z: -190, rot:  1.2 },
+  { x: -210, z:  -40, rot: -1.4 },
+];
+
 // ----- Hill ring constants -------------------------------------------------
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
 const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
@@ -334,21 +344,31 @@ function buildHills(grassMaterial) {
 
 // ----- Place the houses in the clearings -----------------------------------
 function buildHouses(houseGltf) {
-  const template = houseGltf.scene;
+  placeStructures(houseGltf, HOUSE_SPOTS, HOUSE_HEIGHT);
+}
+
+function buildHuts(hutGltf) {
+  placeStructures(hutGltf, HUT_SPOTS, HUT_HEIGHT);
+}
+
+// Place a structure model at each spot, normalised to a target height and
+// sitting on the ground, registered as a solid the player/monsters collide with.
+function placeStructures(gltf, spots, height) {
+  const template = gltf.scene;
   template.updateWorldMatrix(true, true);
 
   // Normalise: scale to a sensible height and sit the base on the ground.
   const box = new THREE.Box3().setFromObject(template);
   const size = new THREE.Vector3(); box.getSize(size);
   const center = new THREE.Vector3(); box.getCenter(center);
-  const scale = HOUSE_HEIGHT / size.y;
+  const scale = height / size.y;
   const footprint = Math.max(size.x, size.z) * scale; // for the tree-clear radius
 
   template.traverse((o) => {
     if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
   });
 
-  for (const spot of HOUSE_SPOTS) {
+  for (const spot of spots) {
     const inst = template.clone(true);
     inst.position.set(-center.x, -box.min.y, -center.z); // recentre on its base
 
@@ -1092,6 +1112,18 @@ function start() {
     buildHouses(house);
   } catch (err) {
     console.error('Failed to load house GLB:', err);
+  }
+
+  // 2b) The wooden huts.
+  try {
+    loadingEl.textContent = 'Raising the huts…';
+    const hut = await load('./assets/wooden_hut.glb', (xhr) => {
+      if (xhr.total) loadingEl.textContent =
+        `Raising the huts… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
+    });
+    buildHuts(hut);
+  } catch (err) {
+    console.error('Failed to load hut GLB:', err);
   }
 
   // 3) The forest of animated trees.
