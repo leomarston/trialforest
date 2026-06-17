@@ -203,12 +203,14 @@ document.getElementById('btn-start')?.addEventListener('click', () => {
 // ----- Sound effects --------------------------------------------------------
 // Each sound keeps a small pool of <audio> clones so rapid/overlapping plays
 // (gunshots, multiple deaths) don't cut each other off.
+const fxClips = []; // { a, base } — every sfx clip, for the FX volume slider
 function makeSfx(file, { volume = 1, pool = 1 } = {}) {
   const clips = [];
   for (let i = 0; i < pool; i++) {
     const a = new Audio(`./assets/sfx/${file}`);
     a.volume = volume; a.preload = 'auto';
     clips.push(a);
+    fxClips.push({ a, base: volume });
   }
   let idx = 0;
   return {
@@ -249,6 +251,44 @@ controls.addEventListener('unlock', () => {
   if (!playerDead) overlay.style.display = 'flex'; // (death screen handles the dead case)
   document.body.classList.remove('playing');
 });
+
+// ----- Settings (sensitivity / FX / music) ---------------------------------
+const settings = Object.assign(
+  { sens: 1.0, fx: 0.8, music: 0.35 },
+  JSON.parse(localStorage.getItem('woods-settings') || '{}')
+);
+function applySettings() {
+  controls.pointerSpeed = settings.sens;                 // mouse-look speed
+  for (const c of fxClips) c.a.volume = c.base * settings.fx;
+  music.volume = settings.music;
+  localStorage.setItem('woods-settings', JSON.stringify(settings));
+}
+
+const settingsEl = document.getElementById('settings');
+const bind = (id, key, fmt) => {
+  const el = document.getElementById(id);
+  const out = document.getElementById(id + '-val');
+  if (!el) return;
+  el.value = settings[key];
+  if (out) out.textContent = fmt(settings[key]);
+  el.addEventListener('input', () => {
+    settings[key] = parseFloat(el.value);
+    if (out) out.textContent = fmt(settings[key]);
+    applySettings();
+  });
+};
+const pct = (v) => `${Math.round(v * 100)}%`;
+bind('set-sens',  'sens',  (v) => v.toFixed(2) + '×');
+bind('set-fx',    'fx',    pct);
+bind('set-music', 'music', pct);
+
+document.getElementById('btn-settings')?.addEventListener('click', () => {
+  if (settingsEl) settingsEl.style.display = 'flex';
+});
+document.getElementById('btn-set-back')?.addEventListener('click', () => {
+  if (settingsEl) settingsEl.style.display = 'none';
+});
+applySettings();
 
 // ----- Input ---------------------------------------------------------------
 const keys = { forward: false, back: false, left: false, right: false, run: false };
