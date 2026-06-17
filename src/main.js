@@ -513,12 +513,12 @@ function placeStructures(gltf, spots, height) {
     // Register it as a solid the player collides against (walls block, doors don't).
     houseColliders.push({ obj: pivot, x: spot.x, z: spot.z });
 
-    // Remove the door entirely — just an open doorway. Hiding the node the door
-    // animation drives also drops it from collision (raycasts skip invisibles).
+    // Remove the door entirely — just an open doorway. Detach the node the door
+    // animation drives (raycasts ignore .visible, so it must actually be removed).
     if (doorClip && doorClip.tracks[0]) {
       const t = doorClip.tracks[0].name;
       const doorNode = inst.getObjectByName(t.slice(0, t.lastIndexOf('.')));
-      if (doorNode) doorNode.visible = false;
+      if (doorNode) doorNode.removeFromParent();
     }
     pivot.updateWorldMatrix(true, true);
   }
