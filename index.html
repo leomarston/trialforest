@@ -39,6 +39,11 @@
     #killcount #kills { color: #fff; }
     body.playing #killcount { display: block; }
 
+    #aniclip { position: fixed; bottom: 12px; left: 14px; z-index: 5; display: none;
+      color: rgba(255,255,255,.5); font-size: 12px; letter-spacing: .5px;
+      text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; }
+    body.playing #aniclip { display: block; }
+
     #loading {position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 1.2rem; z-index: 20; background: #05070d; }
   </style>
@@ -48,6 +53,7 @@
 
   <div id="crosshair" aria-hidden="true"></div>
   <div id="killcount">KILLS&nbsp; <span id="kills">0</span></div>
+  <div id="aniclip" title="press [ and ] to change the monster's walk animation">anim 2</div>
 
   <div id="loading">Loading the forest floor…</div>
 
@@ -59,6 +65,7 @@
       Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
       &nbsp;·&nbsp; Look: <span class="key">Mouse</span>
       &nbsp;·&nbsp; Run: <span class="key">Shift</span>
+      &nbsp;·&nbsp; Shoot: <span class="key">Click</span>
       &nbsp;·&nbsp; Torch: <span class="key">F</span>
       &nbsp;·&nbsp; Exit: <span class="key">Esc</span>
     </p>

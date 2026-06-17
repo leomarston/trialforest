@@ -7,9 +7,10 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
 const PLAYER_HEIGHT = 1.85;
-const STEP_UP       = 0.6;   // tallest step the player can climb (stairs)
-const WALK_SPEED    = 22;
-const RUN_SPEED     = 44;
+const STEP_UP       = 0.7;   // tallest step the player can climb (stairs)
+const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
+const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
+const ACCEL         = 9;     // how quickly you reach top speed (gives weight)
 
 // ----- Forest constants ----------------------------------------------------
 const TREE_COUNT     = 280;  // a sparser forest — room to breathe between trees
@@ -37,14 +38,14 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 // The GLB ships 18 animation clips, but their names are GBK-garbled and can't
 // be read, so the chase/attack clips are selected by index — tweak these two
 // if the wrong motion plays.
-const MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip
-const MONSTER_SPEED       = 8;        // slower than the player can run (escapable)
+let   MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip ([ and ] cycle it live)
+const MONSTER_SPEED       = 5.5;      // a touch slower than your run (escapable)
 const MONSTER_HEIGHT      = 2.4;      // big enough to clearly spot across the clearing
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
 const MONSTER_MAX         = 6;        // how many hunt you at once
-const MONSTER_SPAWN_MIN   = 28;       // they appear out of the dark, this far away…
-const MONSTER_SPAWN_MAX   = 70;       // …to this far
-const MONSTER_RESPAWN     = 1.6;      // seconds between reinforcements
+const MONSTER_SPAWN_MIN   = 14;       // they appear out of the dark, this close…
+const MONSTER_SPAWN_MAX   = 45;       // …to this far (inside the fog so you see them)
+const MONSTER_RESPAWN     = 2.0;      // seconds between reinforcements
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
@@ -56,7 +57,7 @@ const FIRE_COOLDOWN = 0.18;                     // seconds between shots
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // cap for performance
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -78,7 +79,7 @@ scene.add(hemi);
 const moon = new THREE.DirectionalLight(0x6b80b0, 0.18);
 moon.position.set(-80, 160, -60);
 moon.castShadow = true;
-moon.shadow.mapSize.set(2048, 2048);
+moon.shadow.mapSize.set(1024, 1024);
 moon.shadow.camera.near = 1;
 moon.shadow.camera.far = 600;
 const s = 220;
@@ -143,7 +144,9 @@ const setKey = (e, down) => {
   }
 };
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyF' && !e.repeat) setTorch(!torchOn); // toggle the torch
+  if (e.code === 'KeyF' && !e.repeat) setTorch(!torchOn);              // toggle the torch
+  if (e.code === 'BracketLeft'  && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP - 1);
+  if (e.code === 'BracketRight' && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP + 1);
   setKey(e, true);
 });
 document.addEventListener('keyup',   (e) => setKey(e, false));
@@ -218,7 +221,7 @@ function buildHills(grassMaterial) {
       mound.scale.set(w, h, w);
       // Bury the lower half so the dome rises smoothly out of the ground.
       mound.position.set(Math.cos(a) * r, -h * 0.45, Math.sin(a) * r);
-      mound.castShadow = true;
+      mound.castShadow = false;   // distant backdrop — no need to cast shadows
       mound.receiveShadow = true;
       hills.add(mound);
     }
@@ -266,7 +269,9 @@ function buildHouses(houseGltf) {
 // while doorways and gaps let them through. Resolving X and Z separately lets
 // the player slide along a wall instead of sticking to it.
 const _ray = new THREE.Raycaster();
-const _heights = [0.4, 1.0, 1.55];     // knee / waist / head — catch low and high walls
+// Sample above STEP_UP so a stair riser isn't mistaken for a wall — short steps
+// pass through and the floor-follow lifts the player up them instead.
+const _heights = [STEP_UP + 0.25, 1.2, 1.7]; // shin / waist / head
 let _activeColliders = [];             // houses near the player, refreshed each frame
 let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
 
@@ -346,8 +351,8 @@ function buildForest(treeGltf) {
 
   template.traverse((o) => {
     if (!o.isMesh) return;
-    o.castShadow = true;
-    o.receiveShadow = true;
+    o.castShadow = false;   // 280 morph-animated trees casting shadows is the
+    o.receiveShadow = false; // single biggest cost — skip it for performance
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) {
       if (!m) continue;
@@ -406,7 +411,7 @@ function buildForest(treeGltf) {
       action.timeScale = 0.6 + Math.random() * 0.7;
       action.play();
       action.time = Math.random() * clip.duration;
-      mixers.push(mixer);
+      mixers.push({ mixer, x: px, z: pz }); // position lets us skip far-off trees
     }
   }
 }
@@ -427,7 +432,7 @@ function prepareMonsterTemplate(gltf) {
   monsterTemplate = { scene: scene0, clips: gltf.animations || [], scale, baseY: box.min.y };
 }
 
-function spawnMonster() {
+function spawnMonster(angleOverride) {
   if (!monsterTemplate) return;
   // SkeletonUtils.clone preserves the skinned rig so each monster animates alone.
   const root = cloneSkinned(monsterTemplate.scene);
@@ -442,15 +447,13 @@ function spawnMonster() {
     }
   });
 
-  // Appear out of the dark, at a random bearing and distance from the player.
+  // Appear out of the dark, at a (usually random) bearing and distance.
   const p = controls.getObject().position;
-  const ang = Math.random() * Math.PI * 2;
+  const ang = angleOverride !== undefined ? angleOverride : Math.random() * Math.PI * 2;
   const r = MONSTER_SPAWN_MIN + Math.random() * (MONSTER_SPAWN_MAX - MONSTER_SPAWN_MIN);
-  let x = p.x + Math.cos(ang) * r;
-  let z = p.z + Math.sin(ang) * r;
   const lim = BOUNDARY_HALF - 5;
-  x = Math.max(-lim, Math.min(lim, x));
-  z = Math.max(-lim, Math.min(lim, z));
+  const x = Math.max(-lim, Math.min(lim, p.x + Math.cos(ang) * r));
+  const z = Math.max(-lim, Math.min(lim, p.z + Math.sin(ang) * r));
   root.position.set(x, -monsterTemplate.baseY * monsterTemplate.scale, z);
   scene.add(root);
 
@@ -461,6 +464,29 @@ function spawnMonster() {
   if (clip) { action = mixer.clipAction(clip); action.time = Math.random() * clip.duration; action.play(); }
 
   monsters.push({ root, mixer, action, hitMeshes });
+}
+
+// Drop a few right in front of the player at the start so they're immediately
+// visible (the player begins looking down -Z).
+function seedMonsters() {
+  for (let i = 0; i < 3; i++) spawnMonster(-Math.PI / 2 + (i - 1) * 0.45);
+}
+
+// Swap the walk/run clip on every monster — wired to [ and ] so the right clip
+// can be found live, since the clip names are unreadable.
+const aniEl = document.getElementById('aniclip');
+function setChaseClip(i) {
+  const clips = monsterTemplate ? monsterTemplate.clips : [];
+  if (!clips.length) return;
+  MONSTER_CHASE_CLIP = ((i % clips.length) + clips.length) % clips.length;
+  const clip = clips[MONSTER_CHASE_CLIP];
+  for (const m of monsters) {
+    m.mixer.stopAllAction();
+    m.action = m.mixer.clipAction(clip);
+    m.action.time = Math.random() * clip.duration;
+    m.action.play();
+  }
+  if (aniEl) aniEl.textContent = `anim ${MONSTER_CHASE_CLIP} / ${clips.length - 1}`;
 }
 
 const _toPlayer = new THREE.Vector3();
@@ -599,44 +625,52 @@ document.addEventListener('mousedown', (e) => {
 });
 
 // ----- Movement with boundary clamp ----------------------------------------
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
+const velocity = new THREE.Vector3();   // horizontal velocity in camera-local axes
+let bobPhase = 0, bobAmp = 0;           // head-bob state for the walk/run feel
 
 function update(dt) {
-  if (controls.isLocked) {
-    const speed = (keys.run ? RUN_SPEED : WALK_SPEED);
-    velocity.x -= velocity.x * 10 * dt;
-    velocity.z -= velocity.z * 10 * dt;
+  if (!controls.isLocked) return;
+  const obj = controls.getObject();
+  const speed = keys.run ? RUN_SPEED : WALK_SPEED;
 
-    direction.z = Number(keys.forward) - Number(keys.back);
-    direction.x = Number(keys.right) - Number(keys.left);
-    direction.normalize();
+  // Desired direction (normalised) from the keys.
+  let wishX = Number(keys.right) - Number(keys.left);
+  let wishZ = Number(keys.forward) - Number(keys.back);
+  const moving = wishX !== 0 || wishZ !== 0;
+  if (moving) { const l = Math.hypot(wishX, wishZ); wishX /= l; wishZ /= l; }
 
-    if (keys.forward || keys.back)  velocity.z -= direction.z * speed * dt * 10;
-    if (keys.left || keys.right)    velocity.x -= direction.x * speed * dt * 10;
+  // Accelerate toward the target velocity so starting/stopping has weight.
+  const k = Math.min(1, ACCEL * dt);
+  velocity.x += ((moving ? wishX * speed : 0) - velocity.x) * k;
+  velocity.z += ((moving ? wishZ * speed : 0) - velocity.z) * k;
 
-    // Apply the intended move, then push it out of any house walls it hits.
-    const obj = controls.getObject();
-    const prevX = obj.position.x, prevZ = obj.position.z;
-    controls.moveRight(-velocity.x * dt);
-    controls.moveForward(-velocity.z * dt);
+  // Apply the intended move, then push it out of any house walls it hits.
+  const prevX = obj.position.x, prevZ = obj.position.z;
+  controls.moveRight(velocity.x * dt);
+  controls.moveForward(velocity.z * dt);
 
-    refreshColliders(prevX, prevZ);
-    _playerFeet = obj.position.y - PLAYER_HEIGHT; // test walls at the current floor level
-    let [dx, dz] = resolveMove(prevX, prevZ, obj.position.x - prevX, obj.position.z - prevZ);
-    obj.position.x = prevX + dx;
-    obj.position.z = prevZ + dz;
+  refreshColliders(prevX, prevZ);
+  _playerFeet = obj.position.y - PLAYER_HEIGHT; // test walls at the current floor level
+  let [dx, dz] = resolveMove(prevX, prevZ, obj.position.x - prevX, obj.position.z - prevZ);
+  obj.position.x = prevX + dx;
+  obj.position.z = prevZ + dz;
 
-    // Hard, invisible boundary clamp — far away, the player simply cannot pass.
-    const limit = BOUNDARY_HALF;
-    obj.position.x = Math.max(-limit, Math.min(limit, obj.position.x));
-    obj.position.z = Math.max(-limit, Math.min(limit, obj.position.z));
+  // Hard, invisible boundary clamp — far away, the player simply cannot pass.
+  const limit = BOUNDARY_HALF;
+  obj.position.x = Math.max(-limit, Math.min(limit, obj.position.x));
+  obj.position.z = Math.max(-limit, Math.min(limit, obj.position.z));
 
-    // Follow the floor so stairs and raised floors are walkable.
-    const curFeet = obj.position.y - PLAYER_HEIGHT;
-    const floor = floorHeight(obj.position.x, obj.position.z, curFeet);
-    obj.position.y = floor + PLAYER_HEIGHT;
-  }
+  // Follow the floor so stairs and raised floors are walkable.
+  const curFeet = obj.position.y - PLAYER_HEIGHT;
+  const floor = floorHeight(obj.position.x, obj.position.z, curFeet);
+
+  // Head-bob: oscillate the eye height while actually moving — gait feel.
+  const horizSpeed = Math.hypot(dx, dz) / dt;
+  const movingNow = horizSpeed > 0.4;
+  if (movingNow) bobPhase += dt * (keys.run ? 13 : 9);
+  const targetAmp = movingNow ? (keys.run ? 0.10 : 0.055) : 0;
+  bobAmp += (targetAmp - bobAmp) * Math.min(1, dt * 10);
+  obj.position.y = floor + PLAYER_HEIGHT + Math.sin(bobPhase) * bobAmp;
 }
 
 // ----- Loop ----------------------------------------------------------------
@@ -645,7 +679,15 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
-  for (let i = 0; i < mixers.length; i++) mixers[i].update(dt); // sway the trees
+
+  // Only sway trees near the player — distant trees aren't worth the CPU.
+  const pp = controls.getObject().position;
+  const animR2 = 95 * 95;
+  for (let i = 0; i < mixers.length; i++) {
+    const t = mixers[i];
+    if ((t.x - pp.x) ** 2 + (t.z - pp.z) ** 2 < animR2) t.mixer.update(dt);
+  }
+
   updateMonsters(dt);                                           // hunt the player
   updateEffects(dt);                                            // gibs + flashes
   updateGun(dt);                                                // recoil, flash, fire anim
@@ -724,6 +766,8 @@ function start() {
     loadingEl.textContent = 'Waking the horde…';
     const zombie = await load('./assets/zombie_licker.glb');
     prepareMonsterTemplate(zombie);
+    seedMonsters(); // a few visible from the first moment
+    if (aniEl) aniEl.textContent = `anim ${MONSTER_CHASE_CLIP} / ${monsterTemplate.clips.length - 1}`;
   } catch (err) {
     console.error('Failed to load monster GLB:', err);
   }
