@@ -49,6 +49,7 @@ const MONSTER_SPAWN_MAX   = 50;       // …to this far (inside the fog so you s
 const MONSTER_RESPAWN     = 2.5;      // seconds between reinforcements
 const MONSTER_TOUCH       = 3.2;      // how close counts as touching the player
 const DAMAGE_COOLDOWN     = 1.2;      // seconds of grace between hits
+const MONSTER_DESPAWN     = 90;       // if you outrun one past this, recycle it closer
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
@@ -57,12 +58,25 @@ const GUN_ROT   = new THREE.Euler(0, -Math.PI / 2, 0); // point the barrel forwa
 const SHOOT_RANGE = 300;                       // how far a bullet reaches
 const FIRE_COOLDOWN = 0.18;                     // seconds between shots
 
-// ----- Ammo / pickups -------------------------------------------------------
-const AMMO_START      = 16;   // rounds you begin with
-const AMMO_PER_PICKUP = 10;   // rounds each box gives
-const PICKUP_COUNT    = 16;   // ammo boxes scattered around at once
-const PICKUP_RADIUS   = 2.4;  // how close to walk to grab one
-const PICKUP_RESPAWN  = 5;    // seconds between fresh boxes appearing
+// ----- Ammo / reloading -----------------------------------------------------
+const MAG_SIZE        = 12;   // rounds per magazine before you must reload
+const RESERVE_START   = 24;   // spare rounds you begin with
+const RELOAD_TIME     = 1.1;  // seconds a reload takes
+
+// ----- Pickups --------------------------------------------------------------
+const AMMO_PER_PICKUP   = 12;  // spare rounds per ammo box
+const AMMO_PICKUPS      = 14;  // ammo boxes around the map at once
+const AMMO_RESPAWN      = 6;   // seconds between fresh ammo boxes
+const HEALTH_PER_PICKUP = 1;   // HP restored per medkit
+const HEALTH_PICKUPS    = 5;   // medkits around the map at once
+const HEALTH_RESPAWN    = 14;  // seconds between fresh medkits
+const PICKUP_RADIUS     = 2.4; // how close to walk to grab one
+
+// ----- Stamina --------------------------------------------------------------
+const STAMINA_MAX     = 6.0;  // seconds of continuous sprint
+const STAMINA_DRAIN   = 1.0;  // per second while sprinting
+const STAMINA_REGEN   = 0.6;  // per second while not
+const STAMINA_RECOVER = 2.0;  // stamina needed to sprint again after exhaustion
 
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
@@ -155,6 +169,7 @@ const setKey = (e, down) => {
 };
 document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && !e.repeat) setTorch(!torchOn);              // toggle the torch
+  if (e.code === 'KeyR' && !e.repeat) startReload();                  // reload
   if (e.code === 'BracketLeft'  && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP - 1);
   if (e.code === 'BracketRight' && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP + 1);
   setKey(e, true);
@@ -544,6 +559,18 @@ function updateMonsters(dt) {
   for (const m of monsters) {
     _toPlayer.set(p.x - m.root.position.x, 0, p.z - m.root.position.z);
     const dist = _toPlayer.length() || 1;
+
+    // If you've outrun it into the dark, recycle it to a fresh spot near you.
+    if (dist > MONSTER_DESPAWN) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = MONSTER_SPAWN_MIN + Math.random() * (MONSTER_SPAWN_MAX - MONSTER_SPAWN_MIN);
+      const lim = BOUNDARY_HALF - 5;
+      m.root.position.x = Math.max(-lim, Math.min(lim, p.x + Math.cos(ang) * r));
+      m.root.position.z = Math.max(-lim, Math.min(lim, p.z + Math.sin(ang) * r));
+      m.mixer.update(dt);
+      continue;
+    }
+
     m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
     if (dist > MONSTER_TOUCH) {                  // walk relentlessly toward the player
       const step = MONSTER_SPEED * dt;
@@ -620,10 +647,19 @@ function updateEffects(dt) {
 // our own.
 let gun = null;
 let fireCooldown = 0;
-let ammo = AMMO_START;
+let magAmmo = MAG_SIZE;          // rounds in the gun
+let reserveAmmo = RESERVE_START; // spare rounds
+let reloading = false, reloadTimer = 0;
 const ammoEl = document.getElementById('ammocount');
-function updateAmmo() { if (ammoEl) ammoEl.textContent = ammo; }
-function addAmmo(n) { ammo += n; updateAmmo(); }
+function updateAmmo() { if (ammoEl) ammoEl.textContent = `${magAmmo} / ${reserveAmmo}`; }
+function addAmmo(n) { reserveAmmo += n; updateAmmo(); }
+
+function startReload() {
+  if (reloading || playerDead) return;
+  if (magAmmo >= MAG_SIZE || reserveAmmo <= 0) return;
+  reloading = true;
+  reloadTimer = RELOAD_TIME;
+}
 
 const muzzleFlash = new THREE.PointLight(0xffd070, 0, 12, 2);
 muzzleFlash.position.set(0.16, -0.12, -0.7);
@@ -643,10 +679,13 @@ _shootRay.far = SHOOT_RANGE;
 const _screenCentre = new THREE.Vector2(0, 0);
 
 function shoot() {
-  if (fireCooldown > 0 || playerDead) return;
-  if (ammo <= 0) { fireCooldown = 0.25; return; } // out of ammo — dry click
+  if (fireCooldown > 0 || playerDead || reloading) return;
+  if (magAmmo <= 0) {           // empty mag — start a reload if we have spares
+    if (reserveAmmo > 0) startReload(); else fireCooldown = 0.25; // else dry click
+    return;
+  }
   fireCooldown = FIRE_COOLDOWN;
-  ammo--; updateAmmo();
+  magAmmo--; updateAmmo();
 
   // Muzzle flash + our own recoil kick (no model animation).
   muzzleFlash.intensity = 12;
@@ -665,72 +704,139 @@ function shoot() {
 function updateGun(dt) {
   if (fireCooldown > 0) fireCooldown -= dt;
   if (muzzleFlash.intensity > 0) muzzleFlash.intensity = Math.max(0, muzzleFlash.intensity - 60 * dt);
-  if (gun) gun.position.z += (GUN_POS.z - gun.position.z) * Math.min(1, dt * 12); // ease recoil back
+  if (!gun) return;
+
+  if (reloading) {
+    reloadTimer -= dt;
+    // Our own reload motion: dip the gun down and tilt it as if swapping a mag.
+    const prog = 1 - Math.max(0, reloadTimer) / RELOAD_TIME; // 0 → 1
+    const dip = Math.sin(prog * Math.PI);                    // 0 → 1 → 0
+    gun.position.set(GUN_POS.x, GUN_POS.y - dip * 0.22, GUN_POS.z - dip * 0.12);
+    gun.rotation.set(GUN_ROT.x + dip * 0.9, GUN_ROT.y, GUN_ROT.z + dip * 0.35);
+    if (reloadTimer <= 0) {       // finish: top up the mag from the reserve
+      const take = Math.min(MAG_SIZE - magAmmo, reserveAmmo);
+      magAmmo += take; reserveAmmo -= take;
+      reloading = false; updateAmmo();
+      gun.position.copy(GUN_POS); gun.rotation.copy(GUN_ROT);
+    }
+    return;
+  }
+
+  gun.position.z += (GUN_POS.z - gun.position.z) * Math.min(1, dt * 12); // ease recoil back
 }
 
 document.addEventListener('mousedown', (e) => {
   if (e.button === 0 && controls.isLocked) shoot();
 });
 
-// ----- Ammo pickups scattered around the map -------------------------------
+// ----- Pickups scattered around the map (ammo boxes + medkits) --------------
 const pickups = [];
-let pickupTimer = 0;
-// A little brass ammo box that glows so it's easy to spot in the dark.
-const _boxGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
-const _boxMat = new THREE.MeshStandardMaterial({
-  color: 0xd9a521, emissive: 0x6a4500, emissiveIntensity: 0.9,
-  metalness: 0.6, roughness: 0.4,
-});
+const ammoTimers = { ammo: 0, health: 0 };
 
-function spawnPickup() {
+// Glowing brass ammo box.
+const _ammoGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
+const _ammoMat = new THREE.MeshStandardMaterial({
+  color: 0xd9a521, emissive: 0x6a4500, emissiveIntensity: 0.9, metalness: 0.6, roughness: 0.4,
+});
+// Red medkit with a white cross.
+const _medGeo = new THREE.BoxGeometry(0.6, 0.5, 0.6);
+const _medMat = new THREE.MeshStandardMaterial({
+  color: 0xc01818, emissive: 0x4a0000, emissiveIntensity: 0.8, roughness: 0.6,
+});
+const _crossMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x888888, emissiveIntensity: 0.5 });
+
+function makeMedkit() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(_medGeo, _medMat));
+  const barH = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.04), _crossMat);
+  const barV = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.04), _crossMat);
+  barH.position.z = barV.position.z = 0.31;
+  g.add(barH, barV);
+  return g;
+}
+
+function spawnPickup(type) {
   const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
   const a = Math.random() * Math.PI * 2;
   const x = Math.cos(a) * r, z = Math.sin(a) * r;
-  const box = new THREE.Mesh(_boxGeo, _boxMat);
-  box.position.set(x, 0.6, z);
-  box.castShadow = false;
-  scene.add(box);
-  pickups.push({ box, x, z, baseY: 0.6 });
+  const obj = type === 'health' ? makeMedkit() : new THREE.Mesh(_ammoGeo, _ammoMat);
+  obj.position.set(x, 0.6, z);
+  scene.add(obj);
+  pickups.push({ obj, x, z, baseY: 0.6, type });
+}
+
+function countType(type) {
+  let n = 0;
+  for (const pk of pickups) if (pk.type === type) n++;
+  return n;
+}
+
+function topUp(type, max, respawn, dt) {
+  if (countType(type) < max) {
+    ammoTimers[type] -= dt;
+    if (ammoTimers[type] <= 0) { spawnPickup(type); ammoTimers[type] = respawn; }
+  }
 }
 
 function updatePickups(dt) {
-  // Keep the world stocked with ammo boxes.
-  if (pickups.length < PICKUP_COUNT) {
-    pickupTimer -= dt;
-    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = PICKUP_RESPAWN; }
-  }
+  topUp('ammo',   AMMO_PICKUPS,   AMMO_RESPAWN,   dt);
+  topUp('health', HEALTH_PICKUPS, HEALTH_RESPAWN, dt);
 
   const p = controls.getObject().position;
   for (let i = pickups.length - 1; i >= 0; i--) {
     const pk = pickups[i];
-    pk.box.rotation.y += dt * 1.6;                          // spin to catch the eye
-    pk.box.position.y = pk.baseY + Math.sin(performance.now() * 0.003 + pk.x) * 0.12; // bob
-    if (!playerDead && (pk.x - p.x) ** 2 + (pk.z - p.z) ** 2 < PICKUP_RADIUS * PICKUP_RADIUS) {
-      scene.remove(pk.box);
+    pk.obj.rotation.y += dt * 1.6;                                       // spin to catch the eye
+    pk.obj.position.y = pk.baseY + Math.sin(performance.now() * 0.003 + pk.x) * 0.12; // bob
+    if (playerDead) continue;
+    if ((pk.x - p.x) ** 2 + (pk.z - p.z) ** 2 < PICKUP_RADIUS * PICKUP_RADIUS) {
+      if (pk.type === 'health') {
+        if (playerHP >= PLAYER_MAX_HP) continue; // leave medkits if already full
+        playerHP = Math.min(PLAYER_MAX_HP, playerHP + HEALTH_PER_PICKUP);
+        updateHealthBar();
+      } else {
+        addAmmo(AMMO_PER_PICKUP);
+      }
+      scene.remove(pk.obj);
       pickups.splice(i, 1);
-      addAmmo(AMMO_PER_PICKUP); // collected
     }
   }
 }
 
 function seedPickups() {
-  for (let i = 0; i < PICKUP_COUNT; i++) spawnPickup();
+  for (let i = 0; i < AMMO_PICKUPS; i++)   spawnPickup('ammo');
+  for (let i = 0; i < HEALTH_PICKUPS; i++) spawnPickup('health');
 }
 
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();   // horizontal velocity in camera-local axes
 let bobPhase = 0, bobAmp = 0;           // head-bob state for the walk/run feel
+let stamina = STAMINA_MAX, exhausted = false;
+const staminaFillEl = document.getElementById('staminafill');
+function updateStaminaBar() {
+  if (staminaFillEl) staminaFillEl.style.width = `${(stamina / STAMINA_MAX) * 100}%`;
+}
 
 function update(dt) {
   if (!controls.isLocked) return;
   const obj = controls.getObject();
-  const speed = keys.run ? RUN_SPEED : WALK_SPEED;
 
   // Desired direction (normalised) from the keys.
   let wishX = Number(keys.right) - Number(keys.left);
   let wishZ = Number(keys.forward) - Number(keys.back);
   const moving = wishX !== 0 || wishZ !== 0;
   if (moving) { const l = Math.hypot(wishX, wishZ); wishX /= l; wishZ /= l; }
+
+  // Sprinting needs stamina; once drained you must recover before running again.
+  const running = keys.run && moving && stamina > 0 && !exhausted;
+  if (running) {
+    stamina = Math.max(0, stamina - STAMINA_DRAIN * dt);
+    if (stamina === 0) exhausted = true;
+  } else {
+    stamina = Math.min(STAMINA_MAX, stamina + STAMINA_REGEN * dt);
+    if (exhausted && stamina >= STAMINA_RECOVER) exhausted = false;
+  }
+  updateStaminaBar();
+  const speed = running ? RUN_SPEED : WALK_SPEED;
 
   // Accelerate toward the target velocity so starting/stopping has weight.
   const k = Math.min(1, ACCEL * dt);
@@ -760,8 +866,8 @@ function update(dt) {
   // Head-bob: oscillate the eye height while actually moving — gait feel.
   const horizSpeed = Math.hypot(dx, dz) / dt;
   const movingNow = horizSpeed > 0.4;
-  if (movingNow) bobPhase += dt * (keys.run ? 13 : 9);
-  const targetAmp = movingNow ? (keys.run ? 0.10 : 0.055) : 0;
+  if (movingNow) bobPhase += dt * (running ? 13 : 9);
+  const targetAmp = movingNow ? (running ? 0.10 : 0.055) : 0;
   bobAmp += (targetAmp - bobAmp) * Math.min(1, dt * 10);
   obj.position.y = floor + PLAYER_HEIGHT + Math.sin(bobPhase) * bobAmp;
 }
@@ -803,6 +909,7 @@ function start() {
   loadingEl.style.display = 'none';
   overlay.style.display = 'flex';
   updateHealthBar();
+  updateStaminaBar();
   updateAmmo();
   seedPickups();
   animate();

@@ -54,6 +54,15 @@
       transition: width .25s ease; }
     body.playing #healthbar { display: block; }
 
+    /* Stamina bar, just below the health bar. */
+    #staminabar { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      z-index: 5; display: none; width: 220px; height: 9px; border-radius: 6px;
+      background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); overflow: hidden;
+      pointer-events: none; }
+    #staminafill { height: 100%; width: 100%;
+      background: linear-gradient(90deg, #2f7fd6, #67d0ff); transition: width .08s linear; }
+    body.playing #staminabar { display: block; }
+
     /* Ammo counter, bottom-right. */
     #ammo { position: fixed; bottom: 14px; right: 16px; z-index: 5; display: none;
       color: #ffd36a; font-weight: 800; font-size: 18px; letter-spacing: 1px;
@@ -89,6 +98,7 @@
   <div id="crosshair" aria-hidden="true"></div>
   <div id="killcount">KILLS&nbsp; <span id="kills">0</span></div>
   <div id="healthbar"><div id="healthfill"></div></div>
+  <div id="staminabar"><div id="staminafill"></div></div>
   <div id="ammo">AMMO&nbsp; <span id="ammocount">0</span></div>
   <div id="aniclip" title="press [ and ] to change the monster's walk animation">anim 8</div>
   <div id="hurt"></div>
@@ -113,6 +123,7 @@
       &nbsp;·&nbsp; Look: <span class="key">Mouse</span>
       &nbsp;·&nbsp; Run: <span class="key">Shift</span>
       &nbsp;·&nbsp; Shoot: <span class="key">Click</span>
+      &nbsp;·&nbsp; Reload: <span class="key">R</span>
       &nbsp;·&nbsp; Torch: <span class="key">F</span>
       &nbsp;·&nbsp; Exit: <span class="key">Esc</span>
     </p>
@@ -128,6 +139,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=11"></script>
+  <script type="module" src="./src/main.js?v=12"></script>
 </body>
 </html>
