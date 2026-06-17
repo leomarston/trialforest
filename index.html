@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trial Forest — Grassy Field</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #87ceeb; font-family: system-ui, sans-serif; }
+    #app { width: 100vw; height: 100vh; display: block; }
+
+    #overlay {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      background: rgba(20, 40, 20, 0.55); color: #fff; text-align: center;
+      cursor: pointer; z-index: 10; backdrop-filter: blur(2px);
+    }
+    #overlay h1 { font-size: 2.2rem; letter-spacing: 1px; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+    #overlay p { font-size: 1rem; opacity: .9; max-width: 460px; line-height: 1.5; }
+    #overlay .key { display: inline-block; padding: 2px 8px; margin: 0 2px; border-radius: 5px;
+      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3); font-weight: 600; }
+    #overlay .cta { margin-top: 10px; padding: 12px 26px; border-radius: 999px;
+      background: #5cb85c; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+
+    #hud {
+      position: fixed; top: 14px; left: 14px; z-index: 5; color: #fff;
+      font-size: 13px; line-height: 1.6; text-shadow: 0 1px 3px rgba(0,0,0,.7);
+      pointer-events: none;
+    }
+    #warning {
+      position: fixed; bottom: 38px; left: 50%; transform: translateX(-50%);
+      z-index: 6; color: #fff; background: rgba(160, 40, 40, .85);
+      padding: 10px 20px; border-radius: 999px; font-weight: 700; font-size: 14px;
+      opacity: 0; transition: opacity .25s; pointer-events: none;
+      box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    }
+    #warning.show { opacity: 1; }
+    #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 1.2rem; z-index: 20; background: #2d4a2d; }
+  </style>
+</head>
+<body>
+  <canvas id="app"></canvas>
+
+  <div id="loading">Loading the forest floor…</div>
+
+  <div id="overlay" style="display:none">
+    <h1>🌲 Trial Forest</h1>
+    <p>A vast open meadow. Wander freely — but an unseen edge marks the boundary of this world.
+       You can see the green beyond, yet you cannot cross.</p>
+    <p>
+      Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
+      &nbsp;·&nbsp; Look: <span class="key">Mouse</span>
+      &nbsp;·&nbsp; Run: <span class="key">Shift</span>
+      &nbsp;·&nbsp; Exit: <span class="key">Esc</span>
+    </p>
+    <div class="cta">Click to enter</div>
+  </div>
+
+  <div id="hud"></div>
+  <div id="warning">⛔ You cannot pass beyond the boundary</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
