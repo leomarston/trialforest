@@ -167,7 +167,7 @@ function setTorch(on) {
 }
 function updateBattery(dt) {
   if (torchOn && batteryCharge > 0) {
-    batteryCharge = Math.max(0, batteryCharge - dt);
+    batteryCharge = Math.max(0, batteryCharge - dt * 2); // drains twice as fast
     if (batteryCharge === 0) {            // just died
       if (spareBatteries > 0) { spareBatteries--; batteryCharge = BATTERY_MAX; } // auto-swap
       else applyTorch();                  // out — lights go black
