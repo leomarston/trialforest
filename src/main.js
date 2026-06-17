@@ -24,6 +24,8 @@ const HOUSE_SPOTS = [        // empty clearings to drop a house into
   { x: -130, z: -150, rot:  1.7 },
 ];
 const houseZones = [];       // footprints trees must keep clear of
+const houseColliders = [];   // { obj, x, z } — house meshes the player collides with
+const PLAYER_RADIUS  = 0.6;  // how far the player's body keeps off the walls
 
 // ----- Hill ring constants -------------------------------------------------
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
@@ -201,10 +203,64 @@ function buildHouses(houseGltf) {
     pivot.position.set(spot.x, 0, spot.z);
     pivot.rotation.y = spot.rot;
     scene.add(pivot);
+    pivot.updateWorldMatrix(true, true); // raycasts need up-to-date world matrices
 
     // Reserve a clearing so the forest doesn't grow through the walls.
     houseZones.push({ x: spot.x, z: spot.z, r: footprint * 0.6 + 6 });
+    // Register it as a solid the player collides against (walls block, doors don't).
+    houseColliders.push({ obj: pivot, x: spot.x, z: spot.z });
   }
+}
+
+// ----- Mesh-level collision against the houses -----------------------------
+// Raycasting against the real geometry (not a box) means walls stop the player
+// while doorways and gaps let them through. Resolving X and Z separately lets
+// the player slide along a wall instead of sticking to it.
+const _ray = new THREE.Raycaster();
+const _heights = [0.4, 1.0, 1.55];     // knee / waist / head — catch low and high walls
+let _activeColliders = [];             // houses near the player, refreshed each frame
+
+function refreshColliders(px, pz) {
+  _activeColliders.length = 0;
+  for (const c of houseColliders) {
+    if ((c.x - px) ** 2 + (c.z - pz) ** 2 < 45 * 45) _activeColliders.push(c.obj);
+  }
+}
+
+// Nearest wall distance along (dirx,dirz) from (ox,oz), sampling a few heights
+// and lateral offsets so the player's whole body — not just a point — is tested.
+function wallDistance(ox, oz, dirx, dirz, maxd) {
+  if (!_activeColliders.length) return Infinity;
+  let min = Infinity;
+  const perpx = -dirz, perpz = dirx;
+  for (const off of [-PLAYER_RADIUS, 0, PLAYER_RADIUS]) {
+    for (const h of _heights) {
+      _ray.set(
+        new THREE.Vector3(ox + perpx * off, h, oz + perpz * off),
+        new THREE.Vector3(dirx, 0, dirz)
+      );
+      _ray.far = maxd;
+      const hits = _ray.intersectObjects(_activeColliders, true);
+      if (hits.length) min = Math.min(min, hits[0].distance);
+    }
+  }
+  return min;
+}
+
+// Resolve an intended (dx, dz) move into one that won't pass through a wall.
+function resolveMove(prevX, prevZ, dx, dz) {
+  if (dx !== 0) {
+    const reach = Math.abs(dx) + PLAYER_RADIUS;
+    const d = wallDistance(prevX, prevZ, Math.sign(dx), 0, reach);
+    if (d < reach) dx = Math.max(0, d - PLAYER_RADIUS) * Math.sign(dx);
+  }
+  const nx = prevX + dx; // test Z from the already-resolved X so corners behave
+  if (dz !== 0) {
+    const reach = Math.abs(dz) + PLAYER_RADIUS;
+    const d = wallDistance(nx, prevZ, 0, Math.sign(dz), reach);
+    if (d < reach) dz = Math.max(0, d - PLAYER_RADIUS) * Math.sign(dz);
+  }
+  return [dx, dz];
 }
 
 // The boundary is invisible — nothing is drawn for it. It exists only as the
@@ -368,11 +424,18 @@ function update(dt) {
     if (keys.forward || keys.back)  velocity.z -= direction.z * speed * dt * 10;
     if (keys.left || keys.right)    velocity.x -= direction.x * speed * dt * 10;
 
+    // Apply the intended move, then push it out of any house walls it hits.
+    const obj = controls.getObject();
+    const prevX = obj.position.x, prevZ = obj.position.z;
     controls.moveRight(-velocity.x * dt);
     controls.moveForward(-velocity.z * dt);
 
+    refreshColliders(prevX, prevZ);
+    let [dx, dz] = resolveMove(prevX, prevZ, obj.position.x - prevX, obj.position.z - prevZ);
+    obj.position.x = prevX + dx;
+    obj.position.z = prevZ + dz;
+
     // Hard, invisible boundary clamp — far away, the player simply cannot pass.
-    const obj = controls.getObject();
     const limit = BOUNDARY_HALF;
     obj.position.x = Math.max(-limit, Math.min(limit, obj.position.x));
     obj.position.z = Math.max(-limit, Math.min(limit, obj.position.z));
