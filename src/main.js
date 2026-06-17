@@ -4,15 +4,15 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 
 // ----- World constants -----------------------------------------------------
 const GROUND_HALF   = 6000;  // how far the green grass visibly extends
-const BOUNDARY_HALF = 5000;  // the invisible limit the player cannot cross — far, far away
+const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
 const PLAYER_HEIGHT = 1.7;
 const WALK_SPEED    = 22;
 const RUN_SPEED     = 44;
 
 // ----- Forest constants ----------------------------------------------------
-const TREE_COUNT     = 280;  // hundreds of trees make the forest
-const FOREST_RADIUS  = 1100; // how far the trees spread from the spawn
-const CLEARING       = 16;   // open breathing room around the player's start
+const TREE_COUNT     = 600;  // hundreds of trees make a real, dense forest
+const FOREST_RADIUS  = 700;  // trees fill the roamable area and spill well beyond it
+const CLEARING       = 10;   // open breathing room around the player's start
 const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 
 // ----- Renderer / scene ----------------------------------------------------
@@ -131,10 +131,26 @@ function buildForest(treeGltf) {
   const clip = treeGltf.animations && treeGltf.animations[0];
 
   template.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-      if (o.material) o.material.side = THREE.DoubleSide; // leaf cards look right both ways
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      m.side = THREE.DoubleSide;     // leaf cards are lit from both faces
+      m.metalness = 0.0;             // foliage/bark is never metallic
+      m.roughness = 1.0;
+
+      // The leaves arrive as glTF alpha-MASK (hard binary cutout) — that razor
+      // edge is the "paper cut-out" look. Switch the cutout to alpha-to-coverage
+      // so MSAA softens the leaf silhouettes into natural, feathered edges.
+      if (m.alphaTest > 0 || m.transparent) {
+        m.alphaToCoverage = true;
+        m.transparent = false;       // keep it cutout, not blended (no sort artefacts)
+        m.depthWrite = true;
+        if (m.alphaTest > 0) m.alphaTest = Math.min(m.alphaTest, 0.3); // fuller canopy
+        m.needsUpdate = true;
+      }
     }
   });
 
