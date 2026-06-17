@@ -22,7 +22,7 @@ const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 // ----- Structure constants (count + places randomised each game) ------------
 const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
 const HOUSE_COUNT    = [7, 11];  // random count range per game
-const HUT_HEIGHT     = 9;    // target height of a wooden hut
+const HUT_HEIGHT     = 12;   // target height of a wooden hut (a bit bigger now)
 const HUT_COUNT      = [8, 12];
 const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
 const QUONSET_COUNT  = [5, 8];
@@ -456,7 +456,8 @@ function toggleNearestDoor() {
 const _ray = new THREE.Raycaster();
 // Sample above STEP_UP so a stair riser (or the top landing) isn't mistaken for
 // a wall — short steps pass through and the floor-follow lifts the player up.
-const _heights = [STEP_UP + 0.35, 1.6, 2.5]; // shin / waist / head
+const _heights = [STEP_UP + 0.3, 1.3, 1.9, 2.5]; // shin / knee / chest / head
+const _offsets = [-PLAYER_RADIUS, -PLAYER_RADIUS * 0.5, 0, PLAYER_RADIUS * 0.5, PLAYER_RADIUS];
 let _activeColliders = [];             // houses near the player, refreshed each frame
 let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
 
@@ -473,7 +474,7 @@ function wallDistance(ox, oz, dirx, dirz, maxd) {
   if (!_activeColliders.length) return Infinity;
   let min = Infinity;
   const perpx = -dirz, perpz = dirx;
-  for (const off of [-PLAYER_RADIUS, 0, PLAYER_RADIUS]) {
+  for (const off of _offsets) {
     for (const h of _heights) {
       _ray.set(
         new THREE.Vector3(ox + perpx * off, _playerFeet + h, oz + perpz * off),
