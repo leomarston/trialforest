@@ -23,11 +23,9 @@ const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 
 // ----- Structure constants (count + places randomised each game) ------------
 const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
-const HOUSE_COUNT    = [7, 11];  // random count range per game
+const HOUSE_COUNT    = [11, 16]; // random count range per game (more, now that the quonset is gone)
 const HUT_HEIGHT     = 12;   // target height of a wooden hut (a bit bigger now)
-const HUT_COUNT      = [8, 12];
-const QUONSET_HEIGHT = 11;   // target height of the arched quonset hut (bigger now)
-const QUONSET_COUNT  = [5, 8];
+const HUT_COUNT      = [12, 18];
 const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // Tiny seeded PRNG (mulberry32) — used to lay the forest out the same each game.
 function mulberry32(seed) {
@@ -275,15 +273,17 @@ function startMusic() {
 }
 
 const pauseEl = document.getElementById('pause');
+let gameStarted = false; // true only once loading has finished — nothing runs before
 controls.addEventListener('lock',   () => {
+  if (!gameStarted) return;                // ignore the lock grabbed during loading
   if (pauseEl) pauseEl.style.display = 'none';
   document.body.classList.add('playing'); // show crosshair, hearts + kill count
   startMusic();                            // begin the looping ambience
 });
 controls.addEventListener('unlock', () => {
+  if (!gameStarted) return;                // no pause screen while still loading
   document.body.classList.remove('playing');
-  // Pausing (Esc unlocks the pointer) opens the pause menu mid-game.
-  if (booted && !playerDead && pauseEl) pauseEl.style.display = 'flex';
+  if (!playerDead && pauseEl) pauseEl.style.display = 'flex'; // Esc → pause mid-game
 });
 
 document.getElementById('btn-resume')?.addEventListener('click', () => controls.lock());
@@ -474,10 +474,6 @@ function buildHuts(hutGltf) {
   placeStructures(hutGltf, genSpots(randInt(HUT_COUNT[0], HUT_COUNT[1]), 44), HUT_HEIGHT);
 }
 
-function buildQuonsets(gltf) {
-  placeStructures(gltf, genSpots(randInt(QUONSET_COUNT[0], QUONSET_COUNT[1]), 44), QUONSET_HEIGHT);
-}
-
 // Openable doors (press E): { mixer, action, dur, x, z, open }
 const doors = [];
 
@@ -517,15 +513,14 @@ function placeStructures(gltf, spots, height) {
     // Register it as a solid the player collides against (walls block, doors don't).
     houseColliders.push({ obj: pivot, x: spot.x, z: spot.z });
 
-    // The hut's door stays permanently open — not interactive. Jump the door
-    // animation to its end pose so it's open both visually and for collision.
-    if (doorClip) {
-      const mixer = new THREE.AnimationMixer(inst);
-      const action = mixer.clipAction(doorClip);
-      action.play();
-      mixer.setTime(doorClip.duration);   // hold fully open
+    // Remove the door entirely — just an open doorway. Hiding the node the door
+    // animation drives also drops it from collision (raycasts skip invisibles).
+    if (doorClip && doorClip.tracks[0]) {
+      const t = doorClip.tracks[0].name;
+      const doorNode = inst.getObjectByName(t.slice(0, t.lastIndexOf('.')));
+      if (doorNode) doorNode.visible = false;
     }
-    pivot.updateWorldMatrix(true, true);  // bake the open pose into the colliders
+    pivot.updateWorldMatrix(true, true);
   }
 }
 
@@ -1381,7 +1376,7 @@ const loader = new GLTFLoader();
 const load = (url) => new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
 
 const loadFillEl = document.getElementById('loadfill');
-const LOAD_STEPS = 7;
+const LOAD_STEPS = 6;
 let loadDone = 0;
 function advanceLoad() {
   loadDone++;
@@ -1395,14 +1390,16 @@ async function loadStep(url, onLoad) {
 
 function start() {
   loadingEl.style.display = 'none';
-  // Drop straight into play. If the pointer-lock didn't stick during the load,
-  // show the pause menu so a click on Resume grabs it.
-  if (!controls.isLocked && pauseEl) pauseEl.style.display = 'flex';
+  gameStarted = true;               // only now may music / HUD / pause / gameplay run
   updateHealthBar();
   updateStaminaBar();
   updateAmmo();
   updateBatteryHUD();
   animate();
+  // Enter play: if the lock survived the load, go straight in (music + HUD);
+  // otherwise show the pause menu so a click on Resume grabs the pointer.
+  if (controls.isLocked) { document.body.classList.add('playing'); startMusic(); }
+  else if (pauseEl) pauseEl.style.display = 'flex';
 }
 
 // Nothing loads until the player presses START.
@@ -1418,12 +1415,11 @@ async function boot() {
     './assets/forested_floor.glb',
     './assets/psx_abandoned_house.glb',
     './assets/wooden_hut.glb',
-    './assets/quonset_hut.glb',
     './assets/tree_animate.glb',
     './assets/colt_m1911.glb',
     './assets/zombie_licker.glb',
   ];
-  const [floor, house, hut, quonset, tree, gun, zombie] = await Promise.all(
+  const [floor, house, hut, tree, gun, zombie] = await Promise.all(
     urls.map((u) => load(u).then((g) => { advanceLoad(); return g; })
                           .catch((e) => { console.error('Failed to load', u, e); advanceLoad(); return null; }))
   );
@@ -1438,7 +1434,6 @@ async function boot() {
   }
   if (house) buildHouses(house);
   if (hut) buildHuts(hut);
-  if (quonset) buildQuonsets(quonset);
   if (tree) await buildForest(tree);
   if (gun) buildGun(gun);
   if (zombie) {
