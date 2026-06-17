@@ -3,17 +3,21 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
 // ----- World constants -----------------------------------------------------
-const GROUND_HALF   = 6000;  // how far the green grass visibly extends
+const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
 const PLAYER_HEIGHT = 1.7;
 const WALK_SPEED    = 22;
 const RUN_SPEED     = 44;
 
 // ----- Forest constants ----------------------------------------------------
-const TREE_COUNT     = 600;  // hundreds of trees make a real, dense forest
-const FOREST_RADIUS  = 700;  // trees fill the roamable area and spill well beyond it
+const TREE_COUNT     = 520;  // dense forest filling the bowl inside the hills
+const FOREST_RADIUS  = 340;  // trees fill the play area up to the foot of the hills
 const CLEARING       = 10;   // open breathing room around the player's start
 const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
+
+// ----- Hill ring constants -------------------------------------------------
+const HILL_RING_R    = 380;  // distance from centre to the wall of hills
+const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
 
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
@@ -25,7 +29,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0xbfe3f0, 400, 4000);
+scene.fog = new THREE.Fog(0xbfe3f0, 300, 950);
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(0, PLAYER_HEIGHT, 0);
@@ -110,6 +114,43 @@ function grassMaterialFromGLB(gltf) {
     mat.map = tex;
   }
   return mat;
+}
+
+// ----- Hill ring: a grassy wall that closes off the world ------------------
+// A circle of large, overlapping grassy mounds surrounds the play area. The
+// player can't get past them and can't see over them — so there's no point
+// building (or rendering) anything behind them. That's where the world ends.
+function buildHills(grassMaterial) {
+  const hills = new THREE.Group();
+  // Slightly deeper, less shiny grass so the hills read as a backdrop.
+  const hillMat = grassMaterial.clone();
+  hillMat.color = new THREE.Color(0x6f9a4a);
+
+  // A rounded mound = a squashed sphere, half-buried so only the dome shows.
+  const baseGeo = new THREE.SphereGeometry(1, 18, 12);
+
+  const rows = [
+    { r: HILL_RING_R,        count: 30, h: HILL_HEIGHT,        spread: 95 },
+    { r: HILL_RING_R + 70,   count: 26, h: HILL_HEIGHT * 1.25, spread: 120 }, // taller back row fills gaps
+  ];
+
+  for (const row of rows) {
+    for (let i = 0; i < row.count; i++) {
+      const a = (i / row.count) * Math.PI * 2 + Math.random() * 0.12;
+      const r = row.r + (Math.random() - 0.5) * 40;
+      const h = row.h * (0.8 + Math.random() * 0.5);
+      const w = row.spread * (0.8 + Math.random() * 0.5);
+
+      const mound = new THREE.Mesh(baseGeo, hillMat);
+      mound.scale.set(w, h, w);
+      // Bury the lower half so the dome rises smoothly out of the ground.
+      mound.position.set(Math.cos(a) * r, -h * 0.45, Math.sin(a) * r);
+      mound.castShadow = true;
+      mound.receiveShadow = true;
+      hills.add(mound);
+    }
+  }
+  scene.add(hills);
 }
 
 // The boundary is invisible — nothing is drawn for it. It exists only as the
@@ -250,10 +291,14 @@ function start() {
       if (xhr.total) loadingEl.textContent =
         `Loading the grass… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
     });
-    buildGround(grassMaterialFromGLB(floor));
+    const grassMat = grassMaterialFromGLB(floor);
+    buildGround(grassMat);
+    buildHills(grassMat);
   } catch (err) {
     console.error('Failed to load grass GLB:', err);
-    buildGround(new THREE.MeshStandardMaterial({ color: 0x4f7a32, roughness: 1 }));
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x4f7a32, roughness: 1 });
+    buildGround(grassMat);
+    buildHills(grassMat);
   }
 
   // 2) The forest of animated trees.
