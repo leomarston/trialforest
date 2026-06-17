@@ -184,6 +184,32 @@ scene.add(controls.getObject());
 const overlay = document.getElementById('overlay');
 const loadingEl = document.getElementById('loading');
 
+// ----- Sound effects --------------------------------------------------------
+// Each sound keeps a small pool of <audio> clones so rapid/overlapping plays
+// (gunshots, multiple deaths) don't cut each other off.
+function makeSfx(file, { volume = 1, pool = 1 } = {}) {
+  const clips = [];
+  for (let i = 0; i < pool; i++) {
+    const a = new Audio(`./assets/sfx/${file}`);
+    a.volume = volume; a.preload = 'auto';
+    clips.push(a);
+  }
+  let idx = 0;
+  return {
+    play() {
+      const a = clips[idx]; idx = (idx + 1) % clips.length;
+      try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) { /* ignore */ }
+    },
+  };
+}
+const sfx = {
+  gunshot: makeSfx('gunshotfx.mp3',   { volume: 0.45, pool: 5 }),
+  reload:  makeSfx('gunreloadfx.mp3', { volume: 0.7,  pool: 2 }),
+  death:   makeSfx('monsterdeath.mp3',{ volume: 0.8,  pool: 3 }),
+  damage:  makeSfx('monsterdamage.mp3',{ volume: 0.85, pool: 2 }),
+  growl:   makeSfx('monstergrowl.mp3',{ volume: 0.55, pool: 3 }),
+};
+
 overlay.addEventListener('click', () => { if (!playerDead) controls.lock(); });
 controls.addEventListener('lock',   () => {
   overlay.style.display = 'none';
@@ -538,6 +564,7 @@ function updateHealthBar() {
 
 function hurtPlayer() {
   if (playerDead) return;
+  sfx.damage.play();
   playerHP = Math.max(0, playerHP - 1);
   updateHealthBar();
   if (hurtEl) { hurtEl.classList.remove('flash'); void hurtEl.offsetWidth; hurtEl.classList.add('flash'); }
@@ -629,6 +656,7 @@ function setChaseClip(i) {
 
 const _toPlayer = new THREE.Vector3();
 let damageTimer = 0;
+let growlTimer = 3;
 function updateMonsters(dt) {
   if (playerDead) return;
 
@@ -636,6 +664,12 @@ function updateMonsters(dt) {
   if (monsterTemplate && monsters.length < MONSTER_MAX) {
     respawnTimer -= dt;
     if (respawnTimer <= 0) { spawnMonster(); respawnTimer = MONSTER_RESPAWN; }
+  }
+
+  // Occasional growls from the dark while anything is hunting you.
+  if (monsters.length) {
+    growlTimer -= dt;
+    if (growlTimer <= 0) { sfx.growl.play(); growlTimer = 4 + Math.random() * 6; }
   }
 
   if (damageTimer > 0) damageTimer -= dt;
@@ -682,6 +716,7 @@ function updateMonsters(dt) {
 }
 
 function killMonster(m) {
+  sfx.death.play();
   explodeAt(m.root.position);
   scene.remove(m.root);
   m.mixer.stopAllAction();
@@ -755,6 +790,7 @@ function startReload() {
   if (magAmmo >= MAG_SIZE || reserveAmmo <= 0) return;
   reloading = true;
   reloadTimer = RELOAD_TIME;
+  sfx.reload.play();
 }
 
 const muzzleFlash = new THREE.PointLight(0xffd070, 0, 12, 2);
@@ -782,6 +818,7 @@ function shoot() {
   }
   fireCooldown = FIRE_COOLDOWN;
   magAmmo--; updateAmmo();
+  sfx.gunshot.play();
 
   // Muzzle flash + our own recoil kick (no model animation).
   muzzleFlash.intensity = 12;
