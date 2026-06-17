@@ -182,8 +182,8 @@ let wasLowAmmo = false, wasLowBatt = false;
 function refreshWarnings() {
   const lowAmmo = typeof reserveAmmo === 'number' && reserveAmmo <= 0;
   const lowBatt = typeof spareBatteries === 'number' && spareBatteries <= 0;
-  if (lowAmmo && !wasLowAmmo)      showToast('Down to your last rounds.');
-  else if (lowBatt && !wasLowBatt) showToast('Your light is dying.');
+  if (lowAmmo && !wasLowAmmo)      showToast('LOW ON AMMO');
+  else if (lowBatt && !wasLowBatt) showToast('LOW ON BATTERY');
   wasLowAmmo = lowAmmo; wasLowBatt = lowBatt;
 }
 
@@ -226,6 +226,13 @@ document.getElementById('btn-start')?.addEventListener('click', () => {
   controls.lock();  // grab the pointer now (valid gesture) so we drop straight in
   boot();           // start loading the game
 });
+
+// "Play again" reloads with this flag set — skip the menu and reload the game.
+if (sessionStorage.getItem('woods-autostart') === '1') {
+  sessionStorage.removeItem('woods-autostart');
+  if (menuEl) menuEl.style.display = 'none';
+  boot();
+}
 
 // ----- Sound effects --------------------------------------------------------
 // Each sound keeps a small pool of <audio> clones so rapid/overlapping plays
@@ -794,12 +801,18 @@ function hurtPlayer(amount = 1) {
 
 function die() {
   playerDead = true;
-  if (finalKillsEl) finalKillsEl.textContent = killCount; // show the score
   if (deathEl) deathEl.style.display = 'flex';
   controls.unlock();
 }
 
-if (deathEl) deathEl.addEventListener('click', () => location.reload());
+document.getElementById('btn-again')?.addEventListener('click', () => {
+  sessionStorage.setItem('woods-autostart', '1'); // skip the menu, go straight back in
+  location.reload();
+});
+document.getElementById('btn-menu')?.addEventListener('click', () => {
+  sessionStorage.removeItem('woods-autostart');
+  location.reload();
+});
 
 // ----- The monsters that endlessly hunt the player -------------------------
 let monsterTemplate = null;   // { scene, clips, scale, baseY }
