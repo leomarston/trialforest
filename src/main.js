@@ -57,6 +57,13 @@ const GUN_ROT   = new THREE.Euler(0, -Math.PI / 2, 0); // point the barrel forwa
 const SHOOT_RANGE = 300;                       // how far a bullet reaches
 const FIRE_COOLDOWN = 0.18;                     // seconds between shots
 
+// ----- Ammo / pickups -------------------------------------------------------
+const AMMO_START      = 16;   // rounds you begin with
+const AMMO_PER_PICKUP = 10;   // rounds each box gives
+const PICKUP_COUNT    = 16;   // ammo boxes scattered around at once
+const PICKUP_RADIUS   = 2.4;  // how close to walk to grab one
+const PICKUP_RESPAWN  = 5;    // seconds between fresh boxes appearing
+
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -422,27 +429,26 @@ function buildForest(treeGltf) {
 // ----- Player health & death -----------------------------------------------
 let playerHP = PLAYER_MAX_HP;
 let playerDead = false;
-const heartsEl = document.getElementById('hearts');
+const healthFillEl = document.getElementById('healthfill');
 const hurtEl   = document.getElementById('hurt');
 const deathEl  = document.getElementById('death');
+const finalKillsEl = document.getElementById('finalkills');
 
-function drawHearts() {
-  if (!heartsEl) return;
-  let s = '';
-  for (let i = 0; i < PLAYER_MAX_HP; i++) s += i < playerHP ? '❤' : '🖤';
-  heartsEl.textContent = s;
+function updateHealthBar() {
+  if (healthFillEl) healthFillEl.style.width = `${(playerHP / PLAYER_MAX_HP) * 100}%`;
 }
 
 function hurtPlayer() {
   if (playerDead) return;
   playerHP = Math.max(0, playerHP - 1);
-  drawHearts();
+  updateHealthBar();
   if (hurtEl) { hurtEl.classList.remove('flash'); void hurtEl.offsetWidth; hurtEl.classList.add('flash'); }
   if (playerHP <= 0) die();
 }
 
 function die() {
   playerDead = true;
+  if (finalKillsEl) finalKillsEl.textContent = killCount; // show the score
   if (deathEl) deathEl.style.display = 'flex';
   controls.unlock();
 }
@@ -614,6 +620,11 @@ function updateEffects(dt) {
 // our own.
 let gun = null;
 let fireCooldown = 0;
+let ammo = AMMO_START;
+const ammoEl = document.getElementById('ammocount');
+function updateAmmo() { if (ammoEl) ammoEl.textContent = ammo; }
+function addAmmo(n) { ammo += n; updateAmmo(); }
+
 const muzzleFlash = new THREE.PointLight(0xffd070, 0, 12, 2);
 muzzleFlash.position.set(0.16, -0.12, -0.7);
 camera.add(muzzleFlash);
@@ -632,8 +643,10 @@ _shootRay.far = SHOOT_RANGE;
 const _screenCentre = new THREE.Vector2(0, 0);
 
 function shoot() {
-  if (fireCooldown > 0) return;
+  if (fireCooldown > 0 || playerDead) return;
+  if (ammo <= 0) { fireCooldown = 0.25; return; } // out of ammo — dry click
   fireCooldown = FIRE_COOLDOWN;
+  ammo--; updateAmmo();
 
   // Muzzle flash + our own recoil kick (no model animation).
   muzzleFlash.intensity = 12;
@@ -658,6 +671,51 @@ function updateGun(dt) {
 document.addEventListener('mousedown', (e) => {
   if (e.button === 0 && controls.isLocked) shoot();
 });
+
+// ----- Ammo pickups scattered around the map -------------------------------
+const pickups = [];
+let pickupTimer = 0;
+// A little brass ammo box that glows so it's easy to spot in the dark.
+const _boxGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
+const _boxMat = new THREE.MeshStandardMaterial({
+  color: 0xd9a521, emissive: 0x6a4500, emissiveIntensity: 0.9,
+  metalness: 0.6, roughness: 0.4,
+});
+
+function spawnPickup() {
+  const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
+  const a = Math.random() * Math.PI * 2;
+  const x = Math.cos(a) * r, z = Math.sin(a) * r;
+  const box = new THREE.Mesh(_boxGeo, _boxMat);
+  box.position.set(x, 0.6, z);
+  box.castShadow = false;
+  scene.add(box);
+  pickups.push({ box, x, z, baseY: 0.6 });
+}
+
+function updatePickups(dt) {
+  // Keep the world stocked with ammo boxes.
+  if (pickups.length < PICKUP_COUNT) {
+    pickupTimer -= dt;
+    if (pickupTimer <= 0) { spawnPickup(); pickupTimer = PICKUP_RESPAWN; }
+  }
+
+  const p = controls.getObject().position;
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pk = pickups[i];
+    pk.box.rotation.y += dt * 1.6;                          // spin to catch the eye
+    pk.box.position.y = pk.baseY + Math.sin(performance.now() * 0.003 + pk.x) * 0.12; // bob
+    if (!playerDead && (pk.x - p.x) ** 2 + (pk.z - p.z) ** 2 < PICKUP_RADIUS * PICKUP_RADIUS) {
+      scene.remove(pk.box);
+      pickups.splice(i, 1);
+      addAmmo(AMMO_PER_PICKUP); // collected
+    }
+  }
+}
+
+function seedPickups() {
+  for (let i = 0; i < PICKUP_COUNT; i++) spawnPickup();
+}
 
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();   // horizontal velocity in camera-local axes
@@ -726,6 +784,7 @@ function animate() {
   updateMonsters(dt);                                           // hunt the player
   updateEffects(dt);                                            // gibs + flashes
   updateGun(dt);                                                // recoil, flash, fire anim
+  updatePickups(dt);                                            // ammo boxes
   renderer.render(scene, camera);
 }
 
@@ -743,7 +802,9 @@ const load = (url, onProgress) => new Promise((resolve, reject) =>
 function start() {
   loadingEl.style.display = 'none';
   overlay.style.display = 'flex';
-  drawHearts();
+  updateHealthBar();
+  updateAmmo();
+  seedPickups();
   animate();
 }
 
