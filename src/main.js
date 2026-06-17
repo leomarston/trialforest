@@ -897,8 +897,12 @@ document.addEventListener('mousedown', (e) => {
   if (e.button === 0 && controls.isLocked) shoot();
 });
 
-// ----- Pickups dropped by monsters (not scattered on the map) --------------
+// ----- Pickups: monster drops + roaming ground ammo ------------------------
 const pickups = [];
+const GROUND_AMMO_COUNT   = 8;    // loose ammo boxes kept around the player
+const GROUND_AMMO_MIN     = 18;   // spawn this far from the player…
+const GROUND_AMMO_MAX     = 75;   // …to this far
+const GROUND_AMMO_DESPAWN = 120;  // wander past this and it recycles near you
 
 // Glowing brass ammo box.
 const _ammoGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
@@ -937,13 +941,35 @@ function makeBattery() {
 }
 
 // Drop a pickup of `type` at a world position (where a monster died).
-function spawnPickup(type, x, z) {
+function spawnPickup(type, x, z, ground = false) {
   const obj = type === 'health' ? makeMedkit()
             : type === 'battery' ? makeBattery()
             : new THREE.Mesh(_ammoGeo, _ammoMat);
   obj.position.set(x, 0.6, z);
   scene.add(obj);
-  pickups.push({ obj, x, z, baseY: 0.6, type });
+  pickups.push({ obj, x, z, baseY: 0.6, type, ground });
+}
+
+// A loose ammo box somewhere around the player.
+function spawnGroundAmmo() {
+  const p = controls.getObject().position;
+  const a = Math.random() * Math.PI * 2;
+  const r = GROUND_AMMO_MIN + Math.random() * (GROUND_AMMO_MAX - GROUND_AMMO_MIN);
+  const lim = BOUNDARY_HALF - 5;
+  const x = Math.max(-lim, Math.min(lim, p.x + Math.cos(a) * r));
+  const z = Math.max(-lim, Math.min(lim, p.z + Math.sin(a) * r));
+  spawnPickup('ammo', x, z, true);
+}
+
+// Move an existing ground pickup to a fresh spot around the player.
+function relocateGround(pk) {
+  const p = controls.getObject().position;
+  const a = Math.random() * Math.PI * 2;
+  const r = GROUND_AMMO_MIN + Math.random() * (GROUND_AMMO_MAX - GROUND_AMMO_MIN);
+  const lim = BOUNDARY_HALF - 5;
+  pk.x = Math.max(-lim, Math.min(lim, p.x + Math.cos(a) * r));
+  pk.z = Math.max(-lim, Math.min(lim, p.z + Math.sin(a) * r));
+  pk.obj.position.set(pk.x, pk.baseY, pk.z);
 }
 
 // Roll the monster's loot table when it dies (drops only — never on the map).
@@ -953,12 +979,23 @@ function dropLoot(x, z) {
   if (Math.random() < 0.05) spawnPickup('battery', x, z + 0.6);        // energy  1/20
 }
 
+let groundAmmoCount = 0;
 function updatePickups(dt) {
+  // Keep loose ammo boxes roaming around the player.
+  if (groundAmmoCount < GROUND_AMMO_COUNT) { spawnGroundAmmo(); groundAmmoCount++; }
+
   const p = controls.getObject().position;
   for (let i = pickups.length - 1; i >= 0; i--) {
     const pk = pickups[i];
     pk.obj.rotation.y += dt * 1.6;                                       // spin to catch the eye
     pk.obj.position.y = pk.baseY + Math.sin(performance.now() * 0.003 + pk.x) * 0.12; // bob
+
+    // Loose ammo you've left far behind recycles to a fresh spot near you.
+    if (pk.ground && (pk.x - p.x) ** 2 + (pk.z - p.z) ** 2 > GROUND_AMMO_DESPAWN ** 2) {
+      relocateGround(pk);
+      continue;
+    }
+
     if (playerDead) continue;
     if ((pk.x - p.x) ** 2 + (pk.z - p.z) ** 2 < PICKUP_RADIUS * PICKUP_RADIUS) {
       if (pk.type === 'health') {
@@ -970,6 +1007,7 @@ function updatePickups(dt) {
       } else {
         addAmmo(AMMO_PER_PICKUP);
       }
+      if (pk.ground) groundAmmoCount--; // let a fresh one roam in
       scene.remove(pk.obj);
       pickups.splice(i, 1);
     }
