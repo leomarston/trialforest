@@ -55,7 +55,7 @@ const _mHeights = [0.7, 2.2, 4.5];    // body heights sampled for monster wall c
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
-const GUN_POS   = new THREE.Vector3( 0.16, -0.15, -0.42);
+const GUN_POS   = new THREE.Vector3( 0.2, -0.22, -0.3); // close to the camera so it reads as held
 const GUN_ROT   = new THREE.Euler(0, -Math.PI / 2, 0); // point the barrel forward
 const SHOOT_RANGE = 300;                       // how far a bullet reaches
 const FIRE_COOLDOWN = 0.18;                     // seconds between shots
