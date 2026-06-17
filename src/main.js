@@ -6,7 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 // ----- World constants -----------------------------------------------------
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
-const PLAYER_HEIGHT = 2.05;
+const PLAYER_HEIGHT = 2.7;   // tall enough to see through the house windows
 const STEP_UP       = 1.0;   // tallest step the player can climb (stairs/landings)
 const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
 const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
@@ -50,6 +50,9 @@ const MONSTER_RESPAWN     = 2.5;      // seconds between reinforcements
 const MONSTER_TOUCH       = 3.2;      // how close counts as touching the player
 const DAMAGE_COOLDOWN     = 1.2;      // seconds of grace between hits
 const MONSTER_DESPAWN     = 90;       // if you outrun one past this, recycle it closer
+const MONSTER_RADIUS      = 1.6;      // body radius for wall collision
+const MONSTER_STEP        = 1.6;      // how tall a step a monster can climb
+const _mHeights = [0.7, 2.2, 4.5];    // body heights sampled for monster wall collision
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
@@ -77,6 +80,12 @@ const STAMINA_MAX     = 6.0;  // seconds of continuous sprint
 const STAMINA_DRAIN   = 1.0;  // per second while sprinting
 const STAMINA_REGEN   = 0.6;  // per second while not
 const STAMINA_RECOVER = 2.0;  // stamina needed to sprint again after exhaustion
+
+// ----- Torch battery (Outlast-style) ----------------------------------------
+const BATTERY_MAX     = 90;   // seconds a battery lasts with the torch on
+const BATTERY_SPARES  = 2;    // spare batteries you start with
+const BATTERY_PICKUPS = 5;    // batteries lying around at once
+const BATTERY_RESPAWN = 18;   // seconds between fresh batteries
 
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
@@ -132,10 +141,39 @@ scene.add(camera); // so the camera-parented lights live in the scene graph
 
 let torchOn = true;
 const TORCH_INTENSITY = 22.0, TORCH_GLOW = 2.2; // bright, strong beam
+
+// Battery: the torch drains it; at empty it dies until you load a spare.
+let batteryCharge = BATTERY_MAX;
+let spareBatteries = BATTERY_SPARES;
+const battFillEl  = document.getElementById('batteryfill');
+const battCountEl = document.getElementById('batterycount');
+function updateBatteryHUD() {
+  if (battFillEl)  battFillEl.style.width = `${(batteryCharge / BATTERY_MAX) * 100}%`;
+  if (battCountEl) battCountEl.textContent = spareBatteries;
+}
+
+function applyTorch() {
+  const lit = torchOn && batteryCharge > 0;
+  torch.intensity = lit ? TORCH_INTENSITY : 0;
+  torchGlow.intensity = lit ? TORCH_GLOW : 0;
+}
 function setTorch(on) {
+  if (on && batteryCharge <= 0) {        // dead torch — load a spare if we have one
+    if (spareBatteries > 0) { spareBatteries--; batteryCharge = BATTERY_MAX; updateBatteryHUD(); }
+    else return;                          // nothing to power it
+  }
   torchOn = on;
-  torch.intensity = on ? TORCH_INTENSITY : 0;
-  torchGlow.intensity = on ? TORCH_GLOW : 0;
+  applyTorch();
+}
+function updateBattery(dt) {
+  if (torchOn && batteryCharge > 0) {
+    batteryCharge = Math.max(0, batteryCharge - dt);
+    if (batteryCharge === 0) {            // just died
+      if (spareBatteries > 0) { spareBatteries--; batteryCharge = BATTERY_MAX; } // auto-swap
+      else applyTorch();                  // out — lights go black
+    }
+    updateBatteryHUD();
+  }
 }
 setTorch(true);
 
@@ -296,7 +334,7 @@ function buildHouses(houseGltf) {
 const _ray = new THREE.Raycaster();
 // Sample above STEP_UP so a stair riser (or the top landing) isn't mistaken for
 // a wall — short steps pass through and the floor-follow lifts the player up.
-const _heights = [STEP_UP + 0.35, 1.5, 1.95]; // shin / waist / head
+const _heights = [STEP_UP + 0.35, 1.6, 2.5]; // shin / waist / head
 let _activeColliders = [];             // houses near the player, refreshed each frame
 let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
 
@@ -354,6 +392,51 @@ function resolveMove(prevX, prevZ, dx, dz) {
     if (d < reach) dz = Math.max(0, d - PLAYER_RADIUS) * Math.sign(dz);
   }
   return [dx, dz];
+}
+
+// ----- Generic collision against an explicit list of house meshes ----------
+// Used by the monsters (the player uses the cached-near-it version above).
+const _gRay = new THREE.Raycaster();
+function nearHouseObjs(x, z, R) {
+  const out = [];
+  for (const c of houseColliders) if ((c.x - x) ** 2 + (c.z - z) ** 2 < R * R) out.push(c.obj);
+  return out;
+}
+function wallDistG(objs, ox, oz, feet, dirx, dirz, maxd, radius, heights) {
+  if (!objs.length) return Infinity;
+  let min = Infinity;
+  const perpx = -dirz, perpz = dirx;
+  for (const off of [-radius, 0, radius]) {
+    for (const h of heights) {
+      _gRay.set(new THREE.Vector3(ox + perpx * off, feet + h, oz + perpz * off),
+                new THREE.Vector3(dirx, 0, dirz));
+      _gRay.far = maxd;
+      const hits = _gRay.intersectObjects(objs, true);
+      if (hits.length) min = Math.min(min, hits[0].distance);
+    }
+  }
+  return min;
+}
+function resolveG(objs, prevX, prevZ, feet, dx, dz, radius, heights) {
+  if (dx !== 0) {
+    const reach = Math.abs(dx) + radius;
+    const d = wallDistG(objs, prevX, prevZ, feet, Math.sign(dx), 0, reach, radius, heights);
+    if (d < reach) dx = Math.max(0, d - radius) * Math.sign(dx);
+  }
+  const nx = prevX + dx;
+  if (dz !== 0) {
+    const reach = Math.abs(dz) + radius;
+    const d = wallDistG(objs, nx, prevZ, feet, 0, Math.sign(dz), reach, radius, heights);
+    if (d < reach) dz = Math.max(0, d - radius) * Math.sign(dz);
+  }
+  return [dx, dz];
+}
+function floorG(objs, x, z, feet, stepUp) {
+  if (!objs.length) return 0;
+  _downRay.set(new THREE.Vector3(x, feet + stepUp, z), _down);
+  _downRay.far = stepUp + 6;
+  const hits = _downRay.intersectObjects(objs, true);
+  return hits.length ? hits[0].point.y : 0;
 }
 
 // The boundary is invisible — nothing is drawn for it. It exists only as the
@@ -483,7 +566,9 @@ function prepareMonsterTemplate(gltf) {
   const box = new THREE.Box3().setFromObject(scene0);
   const size = new THREE.Vector3(); box.getSize(size);
   const scale = MONSTER_HEIGHT / size.y;
-  monsterTemplate = { scene: scene0, clips: gltf.animations || [], scale, baseY: box.min.y };
+  // footY puts the model's feet on a floor of height f when root.y = f + footY.
+  monsterTemplate = { scene: scene0, clips: gltf.animations || [], scale, baseY: box.min.y,
+                      footY: -box.min.y * scale };
 }
 
 function spawnMonster(angleOverride) {
@@ -508,7 +593,7 @@ function spawnMonster(angleOverride) {
   const lim = BOUNDARY_HALF - 5;
   const x = Math.max(-lim, Math.min(lim, p.x + Math.cos(ang) * r));
   const z = Math.max(-lim, Math.min(lim, p.z + Math.sin(ang) * r));
-  root.position.set(x, -monsterTemplate.baseY * monsterTemplate.scale, z);
+  root.position.set(x, monsterTemplate.footY, z);
   scene.add(root);
 
   const mixer = new THREE.AnimationMixer(root);
@@ -574,8 +659,19 @@ function updateMonsters(dt) {
     m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
     if (dist > MONSTER_TOUCH) {                  // walk relentlessly toward the player
       const step = MONSTER_SPEED * dt;
-      m.root.position.x += (_toPlayer.x / dist) * step;
-      m.root.position.z += (_toPlayer.z / dist) * step;
+      let mvx = (_toPlayer.x / dist) * step;
+      let mvz = (_toPlayer.z / dist) * step;
+
+      // Collide with the houses (and climb their steps) just like the player.
+      const objs = nearHouseObjs(m.root.position.x, m.root.position.z, 55);
+      const feet = m.root.position.y - monsterTemplate.footY;
+      if (objs.length) {
+        [mvx, mvz] = resolveG(objs, m.root.position.x, m.root.position.z, feet, mvx, mvz, MONSTER_RADIUS, _mHeights);
+      }
+      m.root.position.x += mvx;
+      m.root.position.z += mvz;
+      const floor = objs.length ? floorG(objs, m.root.position.x, m.root.position.z, feet, MONSTER_STEP) : 0;
+      m.root.position.y = floor + monsterTemplate.footY;
     } else {
       touched = true;                            // close enough to claw at you
     }
@@ -731,7 +827,7 @@ document.addEventListener('mousedown', (e) => {
 
 // ----- Pickups scattered around the map (ammo boxes + medkits) --------------
 const pickups = [];
-const ammoTimers = { ammo: 0, health: 0 };
+const ammoTimers = { ammo: 0, health: 0, battery: 0 };
 
 // Glowing brass ammo box.
 const _ammoGeo = new THREE.BoxGeometry(0.7, 0.45, 0.5);
@@ -744,6 +840,12 @@ const _medMat = new THREE.MeshStandardMaterial({
   color: 0xc01818, emissive: 0x4a0000, emissiveIntensity: 0.8, roughness: 0.6,
 });
 const _crossMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x888888, emissiveIntensity: 0.5 });
+// Green battery cell.
+const _battGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.55, 12);
+const _battMat = new THREE.MeshStandardMaterial({
+  color: 0x2fbf4f, emissive: 0x0d4a1c, emissiveIntensity: 0.9, metalness: 0.5, roughness: 0.4,
+});
+const _battCapMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, emissive: 0x444444, emissiveIntensity: 0.4 });
 
 function makeMedkit() {
   const g = new THREE.Group();
@@ -754,12 +856,22 @@ function makeMedkit() {
   g.add(barH, barV);
   return g;
 }
+function makeBattery() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(_battGeo, _battMat));
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.08, 8), _battCapMat);
+  cap.position.y = 0.31;
+  g.add(cap);
+  return g;
+}
 
 function spawnPickup(type) {
   const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
   const a = Math.random() * Math.PI * 2;
   const x = Math.cos(a) * r, z = Math.sin(a) * r;
-  const obj = type === 'health' ? makeMedkit() : new THREE.Mesh(_ammoGeo, _ammoMat);
+  const obj = type === 'health' ? makeMedkit()
+            : type === 'battery' ? makeBattery()
+            : new THREE.Mesh(_ammoGeo, _ammoMat);
   obj.position.set(x, 0.6, z);
   scene.add(obj);
   pickups.push({ obj, x, z, baseY: 0.6, type });
@@ -779,8 +891,9 @@ function topUp(type, max, respawn, dt) {
 }
 
 function updatePickups(dt) {
-  topUp('ammo',   AMMO_PICKUPS,   AMMO_RESPAWN,   dt);
-  topUp('health', HEALTH_PICKUPS, HEALTH_RESPAWN, dt);
+  topUp('ammo',    AMMO_PICKUPS,    AMMO_RESPAWN,    dt);
+  topUp('health',  HEALTH_PICKUPS,  HEALTH_RESPAWN,  dt);
+  topUp('battery', BATTERY_PICKUPS, BATTERY_RESPAWN, dt);
 
   const p = controls.getObject().position;
   for (let i = pickups.length - 1; i >= 0; i--) {
@@ -793,6 +906,8 @@ function updatePickups(dt) {
         if (playerHP >= PLAYER_MAX_HP) continue; // leave medkits if already full
         playerHP = Math.min(PLAYER_MAX_HP, playerHP + HEALTH_PER_PICKUP);
         updateHealthBar();
+      } else if (pk.type === 'battery') {
+        spareBatteries++; updateBatteryHUD();
       } else {
         addAmmo(AMMO_PER_PICKUP);
       }
@@ -803,8 +918,9 @@ function updatePickups(dt) {
 }
 
 function seedPickups() {
-  for (let i = 0; i < AMMO_PICKUPS; i++)   spawnPickup('ammo');
-  for (let i = 0; i < HEALTH_PICKUPS; i++) spawnPickup('health');
+  for (let i = 0; i < AMMO_PICKUPS; i++)    spawnPickup('ammo');
+  for (let i = 0; i < HEALTH_PICKUPS; i++)  spawnPickup('health');
+  for (let i = 0; i < BATTERY_PICKUPS; i++) spawnPickup('battery');
 }
 
 // ----- Movement with boundary clamp ----------------------------------------
@@ -890,7 +1006,8 @@ function animate() {
   updateMonsters(dt);                                           // hunt the player
   updateEffects(dt);                                            // gibs + flashes
   updateGun(dt);                                                // recoil, flash, fire anim
-  updatePickups(dt);                                            // ammo boxes
+  updatePickups(dt);                                            // ammo / health / batteries
+  updateBattery(dt);                                            // torch drains the battery
   renderer.render(scene, camera);
 }
 
@@ -911,6 +1028,7 @@ function start() {
   updateHealthBar();
   updateStaminaBar();
   updateAmmo();
+  updateBatteryHUD();
   seedPickups();
   animate();
 }

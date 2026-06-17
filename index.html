@@ -39,6 +39,17 @@
     #killcount #kills { color: #fff; }
     body.playing #killcount { display: block; }
 
+    /* Torch battery: charge bar + spare count, top-left. */
+    #battery { position: fixed; top: 14px; left: 14px; z-index: 5; display: none;
+      align-items: center; gap: 7px; color: #cfe9ff; font-weight: 700; font-size: 14px;
+      text-shadow: 0 2px 5px rgba(0,0,0,.8); pointer-events: none; }
+    #batterybar { width: 90px; height: 12px; border-radius: 4px; overflow: hidden;
+      background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.35); }
+    #batteryfill { height: 100%; width: 100%;
+      background: linear-gradient(90deg, #c8a015, #ffe66a); transition: width .2s linear; }
+    #battery #batterycount { color: #fff; }
+    body.playing #battery { display: flex; }
+
     #aniclip { position: fixed; bottom: 12px; left: 14px; z-index: 5; display: none;
       color: rgba(255,255,255,.5); font-size: 12px; letter-spacing: .5px;
       text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; }
@@ -97,6 +108,7 @@
 
   <div id="crosshair" aria-hidden="true"></div>
   <div id="killcount">KILLS&nbsp; <span id="kills">0</span></div>
+  <div id="battery">🔦 <div id="batterybar"><div id="batteryfill"></div></div> ×<span id="batterycount">0</span></div>
   <div id="healthbar"><div id="healthfill"></div></div>
   <div id="staminabar"><div id="staminafill"></div></div>
   <div id="ammo">AMMO&nbsp; <span id="ammocount">0</span></div>
@@ -139,6 +151,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=12"></script>
+  <script type="module" src="./src/main.js?v=13"></script>
 </body>
 </html>
