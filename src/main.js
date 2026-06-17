@@ -193,6 +193,13 @@ scene.add(controls.getObject());
 const overlay = document.getElementById('overlay');
 const loadingEl = document.getElementById('loading');
 
+// ----- Main menu ------------------------------------------------------------
+const menuEl = document.getElementById('menu');
+document.getElementById('btn-start')?.addEventListener('click', () => {
+  if (menuEl) menuEl.style.display = 'none'; // reveal the game (loading → click to enter)
+});
+// SETTINGS and QUIT are non-functional for now.
+
 // ----- Sound effects --------------------------------------------------------
 // Each sound keeps a small pool of <audio> clones so rapid/overlapping plays
 // (gunshots, multiple deaths) don't cut each other off.

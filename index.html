@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trial Forest — Grassy Field</title>
+  <title>WOODS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik+Wet+Paint&family=Architects+Daughter&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #87ceeb; font-family: system-ui, sans-serif; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; font-family: system-ui, sans-serif; }
     #app { width: 100vw; height: 100vh; display: block; }
 
     #overlay {
@@ -100,6 +103,67 @@
 
     #loading {position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 1.2rem; z-index: 20; background: #05070d; }
+
+    /* ===================== MAIN MENU ("WOODS") ===================== */
+    #menu { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #05060a;
+      font-family: 'Architects Daughter', system-ui, sans-serif; }
+
+    /* Dark room / wooden door backdrop. */
+    .m-scene { position: absolute; inset: 0; z-index: 1;
+      background:
+        radial-gradient(ellipse 52% 66% at 53% 44%, rgba(78,60,40,.55), rgba(18,14,10,0) 72%),
+        linear-gradient(#0b0a08, #050404); }
+    .m-scene::before { content: ""; position: absolute; left: 30%; right: 16%; top: 6%; bottom: 16%;
+      background:
+        linear-gradient(90deg, transparent 49.4%, rgba(0,0,0,.45) 49.7%, transparent 50%),
+        linear-gradient(90deg, transparent 24.6%, rgba(0,0,0,.4) 25%, transparent 25.4%),
+        linear-gradient(90deg, transparent 74.6%, rgba(0,0,0,.4) 75%, transparent 75.4%),
+        linear-gradient(180deg, rgba(60,46,30,.30), rgba(30,22,14,.10));
+      filter: blur(.4px); }
+    .m-scene::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 24%;
+      background: linear-gradient(rgba(0,0,0,0), rgba(8,8,10,.92)); }
+
+    /* Ceiling fluorescent tube with halo + flicker. */
+    .m-light { position: absolute; top: clamp(34px, 9vh, 110px); left: 50%; transform: translateX(-50%);
+      z-index: 3; width: clamp(280px, 40vw, 540px); height: clamp(16px, 2.4vh, 26px); border-radius: 13px;
+      background: linear-gradient(#ffffff, #ffe6b8);
+      box-shadow: 0 0 55px 20px rgba(255,226,170,.5), 0 0 150px 70px rgba(255,205,140,.22);
+      animation: m-flicker 5s infinite steps(1); }
+    .m-light::before { content: ""; position: absolute; left: -14%; right: -14%; top: -180%; height: 320%;
+      background: radial-gradient(ellipse at center top, rgba(255,220,165,.28), transparent 70%);
+      pointer-events: none; }
+    @keyframes m-flicker {
+      0%,89%,100% { opacity: 1; } 90% { opacity: .45; } 91% { opacity: .9; }
+      92% { opacity: .25; } 93% { opacity: .85; } 94% { opacity: .55; } 95% { opacity: 1; }
+    }
+
+    /* Edge vignette. */
+    .m-vig { position: absolute; inset: 0; z-index: 4; pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,.86) 100%); }
+
+    /* Title block. */
+    .m-title { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; pointer-events: none; text-align: center; }
+    .m-title h1 { font-family: 'Rubik Wet Paint', Impact, fantasy; font-weight: 400;
+      font-size: clamp(80px, 17vw, 230px); line-height: .9; letter-spacing: .03em;
+      color: #e7e2d6; position: relative;
+      text-shadow: 0 6px 34px rgba(0,0,0,.85), 0 0 4px rgba(0,0,0,.6); }
+    .m-title h1::after { content: ""; position: absolute; left: -5%; right: -5%; top: 50%;
+      height: clamp(4px, .55vw, 9px); background: #7d0c0c; transform: rotate(-8deg);
+      box-shadow: 0 0 9px rgba(150,0,0,.6); opacity: .9; }
+    .m-title p { margin-top: .55em; color: #7a1414; letter-spacing: .34em;
+      font-size: clamp(12px, 1.6vw, 22px); opacity: .82; text-transform: uppercase; }
+
+    /* Left button stack. */
+    .m-buttons { position: absolute; left: clamp(22px, 7vw, 120px); top: 50%; transform: translateY(-50%);
+      z-index: 6; display: flex; flex-direction: column; gap: clamp(14px, 2.2vw, 26px); }
+    .m-buttons button { font-family: 'Architects Daughter', system-ui, sans-serif;
+      font-size: clamp(24px, 2.8vw, 44px); color: #d9d9d7; background: rgba(42,44,48,.66);
+      border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: .18em .85em;
+      min-width: clamp(150px, 16vw, 232px); text-align: left; letter-spacing: .05em; cursor: pointer;
+      backdrop-filter: blur(2px); transition: background .15s, color .15s, transform .08s; }
+    .m-buttons button:hover { background: rgba(72,74,80,.82); color: #fff; }
+    .m-buttons button:active { transform: scale(.98); }
   </style>
 </head>
 <body>
@@ -126,10 +190,23 @@
   <div id="loading">Loading the forest floor…</div>
 
   <div id="overlay" style="display:none">
-    <h1>🌲 Trial Forest</h1>
-    <p>A dark forest at night. Something is out here with you in the black between
-       the trees. Keep your torch lit — and keep moving.</p>
-    <div class="cta">Click to enter</div>
+    <div class="cta">Click to enter the woods</div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="menu">
+    <div class="m-scene"></div>
+    <div class="m-light"></div>
+    <div class="m-vig"></div>
+    <div class="m-title">
+      <h1>WOODS</h1>
+      <p>Some places aren't meant to be found</p>
+    </div>
+    <nav class="m-buttons">
+      <button id="btn-start">START</button>
+      <button id="btn-settings">SETTINGS</button>
+      <button id="btn-quit">QUIT</button>
+    </nav>
   </div>
 
   <script type="importmap">
@@ -141,6 +218,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=30"></script>
+  <script type="module" src="./src/main.js?v=31"></script>
 </body>
 </html>
