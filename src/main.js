@@ -7,10 +7,11 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
 const PLAYER_HEIGHT = 2.05;
-const STEP_UP       = 0.7;   // tallest step the player can climb (stairs)
+const STEP_UP       = 1.0;   // tallest step the player can climb (stairs/landings)
 const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
 const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
 const ACCEL         = 9;     // how quickly you reach top speed (gives weight)
+const PLAYER_MAX_HP = 4;     // hits the player can take before dying
 
 // ----- Forest constants ----------------------------------------------------
 const TREE_COUNT     = 280;  // a sparser forest — room to breathe between trees
@@ -38,14 +39,16 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 // The GLB ships 18 animation clips, but their names are GBK-garbled and can't
 // be read, so the chase/attack clips are selected by index — tweak these two
 // if the wrong motion plays.
-let   MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip ([ and ] cycle it live)
+let   MONSTER_CHASE_CLIP  = 8;        // the crawl-on-all-fours clip ([ and ] cycle it live)
 const MONSTER_SPEED       = 5.5;      // a touch slower than your run (escapable)
 const MONSTER_HEIGHT      = 18.5;     // towering — 10× the player's size
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
-const MONSTER_MAX         = 6;        // how many hunt you at once
-const MONSTER_SPAWN_MIN   = 14;       // they appear out of the dark, this close…
-const MONSTER_SPAWN_MAX   = 45;       // …to this far (inside the fog so you see them)
-const MONSTER_RESPAWN     = 2.0;      // seconds between reinforcements
+const MONSTER_MAX         = 3;        // how many hunt you at once
+const MONSTER_SPAWN_MIN   = 22;       // they appear out of the dark, this close…
+const MONSTER_SPAWN_MAX   = 50;       // …to this far (inside the fog so you see them)
+const MONSTER_RESPAWN     = 2.5;      // seconds between reinforcements
+const MONSTER_TOUCH       = 3.2;      // how close counts as touching the player
+const DAMAGE_COOLDOWN     = 1.2;      // seconds of grace between hits
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
@@ -122,13 +125,13 @@ scene.add(controls.getObject());
 const overlay = document.getElementById('overlay');
 const loadingEl = document.getElementById('loading');
 
-overlay.addEventListener('click', () => controls.lock());
+overlay.addEventListener('click', () => { if (!playerDead) controls.lock(); });
 controls.addEventListener('lock',   () => {
   overlay.style.display = 'none';
-  document.body.classList.add('playing'); // show crosshair + kill count
+  document.body.classList.add('playing'); // show crosshair, hearts + kill count
 });
 controls.addEventListener('unlock', () => {
-  overlay.style.display = 'flex';
+  if (!playerDead) overlay.style.display = 'flex'; // (death screen handles the dead case)
   document.body.classList.remove('playing');
 });
 
@@ -269,9 +272,9 @@ function buildHouses(houseGltf) {
 // while doorways and gaps let them through. Resolving X and Z separately lets
 // the player slide along a wall instead of sticking to it.
 const _ray = new THREE.Raycaster();
-// Sample above STEP_UP so a stair riser isn't mistaken for a wall — short steps
-// pass through and the floor-follow lifts the player up them instead.
-const _heights = [STEP_UP + 0.25, 1.2, 1.7]; // shin / waist / head
+// Sample above STEP_UP so a stair riser (or the top landing) isn't mistaken for
+// a wall — short steps pass through and the floor-follow lifts the player up.
+const _heights = [STEP_UP + 0.35, 1.5, 1.95]; // shin / waist / head
 let _activeColliders = [];             // houses near the player, refreshed each frame
 let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
 
@@ -310,7 +313,7 @@ const _down = new THREE.Vector3(0, -1, 0);
 function floorHeight(x, z, currentFeet) {
   if (!_activeColliders.length) return 0;
   _downRay.set(new THREE.Vector3(x, currentFeet + STEP_UP, z), _down);
-  _downRay.far = STEP_UP + 4;
+  _downRay.far = STEP_UP + 6;
   const hits = _downRay.intersectObjects(_activeColliders, true);
   return hits.length ? hits[0].point.y : 0;
 }
@@ -416,6 +419,36 @@ function buildForest(treeGltf) {
   }
 }
 
+// ----- Player health & death -----------------------------------------------
+let playerHP = PLAYER_MAX_HP;
+let playerDead = false;
+const heartsEl = document.getElementById('hearts');
+const hurtEl   = document.getElementById('hurt');
+const deathEl  = document.getElementById('death');
+
+function drawHearts() {
+  if (!heartsEl) return;
+  let s = '';
+  for (let i = 0; i < PLAYER_MAX_HP; i++) s += i < playerHP ? '❤' : '🖤';
+  heartsEl.textContent = s;
+}
+
+function hurtPlayer() {
+  if (playerDead) return;
+  playerHP = Math.max(0, playerHP - 1);
+  drawHearts();
+  if (hurtEl) { hurtEl.classList.remove('flash'); void hurtEl.offsetWidth; hurtEl.classList.add('flash'); }
+  if (playerHP <= 0) die();
+}
+
+function die() {
+  playerDead = true;
+  if (deathEl) deathEl.style.display = 'flex';
+  controls.unlock();
+}
+
+if (deathEl) deathEl.addEventListener('click', () => location.reload());
+
 // ----- The monsters that endlessly hunt the player -------------------------
 let monsterTemplate = null;   // { scene, clips, scale, baseY }
 const monsters = [];          // live monsters: { root, mixer, action, hitMeshes }
@@ -466,10 +499,9 @@ function spawnMonster(angleOverride) {
   monsters.push({ root, mixer, action, hitMeshes });
 }
 
-// Drop a few right in front of the player at the start so they're immediately
-// visible (the player begins looking down -Z).
+// Seed the starting monsters at random bearings around the player (not in front).
 function seedMonsters() {
-  for (let i = 0; i < 3; i++) spawnMonster(-Math.PI / 2 + (i - 1) * 0.45);
+  for (let i = 0; i < MONSTER_MAX; i++) spawnMonster(Math.random() * Math.PI * 2);
 }
 
 // Swap the walk/run clip on every monster — wired to [ and ] so the right clip
@@ -490,23 +522,34 @@ function setChaseClip(i) {
 }
 
 const _toPlayer = new THREE.Vector3();
+let damageTimer = 0;
 function updateMonsters(dt) {
-  // Keep the horde topped up.
+  if (playerDead) return;
+
+  // Keep the horde topped up (max MONSTER_MAX).
   if (monsterTemplate && monsters.length < MONSTER_MAX) {
     respawnTimer -= dt;
     if (respawnTimer <= 0) { spawnMonster(); respawnTimer = MONSTER_RESPAWN; }
   }
 
+  if (damageTimer > 0) damageTimer -= dt;
   const p = controls.getObject().position;
+  let touched = false;
   for (const m of monsters) {
     _toPlayer.set(p.x - m.root.position.x, 0, p.z - m.root.position.z);
     const dist = _toPlayer.length() || 1;
     m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
-    const step = MONSTER_SPEED * dt;            // walk relentlessly toward the player
-    m.root.position.x += (_toPlayer.x / dist) * step;
-    m.root.position.z += (_toPlayer.z / dist) * step;
+    if (dist > MONSTER_TOUCH) {                  // walk relentlessly toward the player
+      const step = MONSTER_SPEED * dt;
+      m.root.position.x += (_toPlayer.x / dist) * step;
+      m.root.position.z += (_toPlayer.z / dist) * step;
+    } else {
+      touched = true;                            // close enough to claw at you
+    }
     m.mixer.update(dt);
   }
+
+  if (touched && damageTimer <= 0) { hurtPlayer(); damageTimer = DAMAGE_COOLDOWN; }
 }
 
 function killMonster(m) {
@@ -700,6 +743,7 @@ const load = (url, onProgress) => new Promise((resolve, reject) =>
 function start() {
   loadingEl.style.display = 'none';
   overlay.style.display = 'flex';
+  drawHearts();
   animate();
 }
 
