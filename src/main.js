@@ -1407,27 +1407,40 @@ async function boot() {
   booted = true;
   loadingEl.style.display = 'flex';
 
-  // Grass ground (+ hills) — falls back to a plain green field if it fails.
+  // Download every GLB at once (not one after another) — the bar fills as each
+  // arrives — then build them in the order the world needs.
+  const urls = [
+    './assets/forested_floor.glb',
+    './assets/psx_abandoned_house.glb',
+    './assets/wooden_hut.glb',
+    './assets/quonset_hut.glb',
+    './assets/tree_animate.glb',
+    './assets/colt_m1911.glb',
+    './assets/zombie_licker.glb',
+  ];
+  const [floor, house, hut, quonset, tree, gun, zombie] = await Promise.all(
+    urls.map((u) => load(u).then((g) => { advanceLoad(); return g; })
+                          .catch((e) => { console.error('Failed to load', u, e); advanceLoad(); return null; }))
+  );
+
+  // Grass (+ hills), with a plain-green fallback.
   try {
-    const gltf = await load('./assets/forested_floor.glb');
-    const grassMat = grassMaterialFromGLB(gltf);
+    const grassMat = grassMaterialFromGLB(floor);
     buildGround(grassMat); buildHills(grassMat);
   } catch (err) {
-    console.error('Failed to load grass GLB:', err);
     const grassMat = new THREE.MeshStandardMaterial({ color: 0x4f7a32, roughness: 1 });
     buildGround(grassMat); buildHills(grassMat);
-  } finally { advanceLoad(); }
-
-  await loadStep('./assets/psx_abandoned_house.glb', buildHouses);
-  await loadStep('./assets/wooden_hut.glb', buildHuts);
-  await loadStep('./assets/quonset_hut.glb', buildQuonsets);
-  await loadStep('./assets/tree_animate.glb', buildForest);
-  await loadStep('./assets/colt_m1911.glb', buildGun);
-  await loadStep('./assets/zombie_licker.glb', (gltf) => {
-    prepareMonsterTemplate(gltf);
+  }
+  if (house) buildHouses(house);
+  if (hut) buildHuts(hut);
+  if (quonset) buildQuonsets(quonset);
+  if (tree) await buildForest(tree);
+  if (gun) buildGun(gun);
+  if (zombie) {
+    prepareMonsterTemplate(zombie);
     seedMonsters();
     if (aniEl) aniEl.textContent = `anim ${MONSTER_CHASE_CLIP} / ${monsterTemplate.clips.length - 1}`;
-  });
+  }
 
   start();
 }
