@@ -4,6 +4,11 @@ A first-person walk-around of a **very large grassy field** built with
 [Three.js](https://threejs.org/). The ground uses the supplied
 `forested_floor.glb` as its grass texture, tiled across an enormous plane.
 
+Hundreds of **animated trees** (`tree_animate.glb`, with a baked wind-sway morph)
+are scattered across a disk around the spawn — each normalised to sit on the
+ground, randomly sized and rotated, and swaying on its own phase so the canopy
+reads as a living forest rather than a pulsing copy.
+
 The world is green in every direction, but there is an **invisible limit** the
 player cannot pass. A glowing force-field wall, an edge line, and wooden fence
 posts mark the boundary — beyond it the grass keeps going (and trees dot the
@@ -43,3 +48,6 @@ In `src/main.js`:
 - `GROUND_HALF` — how far the visible green field extends.
 - `BOUNDARY_HALF` — the limit the player cannot cross.
 - `WALK_SPEED` / `RUN_SPEED` — movement speed.
+- `TREE_COUNT` — how many trees fill the forest.
+- `FOREST_RADIUS` / `CLEARING` — how far trees spread, and the open spawn area.
+- `TREE_HEIGHT` — average tree height.

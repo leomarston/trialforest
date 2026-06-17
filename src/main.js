@@ -9,6 +9,12 @@ const PLAYER_HEIGHT = 1.7;
 const WALK_SPEED    = 22;
 const RUN_SPEED     = 44;
 
+// ----- Forest constants ----------------------------------------------------
+const TREE_COUNT     = 280;  // hundreds of trees make the forest
+const FOREST_RADIUS  = 1100; // how far the trees spread from the spawn
+const CLEARING       = 16;   // open breathing room around the player's start
+const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
+
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -109,6 +115,62 @@ function grassMaterialFromGLB(gltf) {
 // The boundary is invisible — nothing is drawn for it. It exists only as the
 // movement clamp far away in update(). Just grass, in every direction.
 
+// ----- Build the forest from the animated tree GLB -------------------------
+const mixers = [];
+
+function buildForest(treeGltf) {
+  const template = treeGltf.scene;
+  template.updateWorldMatrix(true, true);
+
+  // The model is off-centre and ~75 units tall — normalise it so a clone sits
+  // with its trunk base on the ground (y = 0) and is roughly TREE_HEIGHT tall.
+  const box = new THREE.Box3().setFromObject(template);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const baseScale = TREE_HEIGHT / size.y;
+  const clip = treeGltf.animations && treeGltf.animations[0];
+
+  template.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      if (o.material) o.material.side = THREE.DoubleSide; // leaf cards look right both ways
+    }
+  });
+
+  const forest = new THREE.Group();
+  scene.add(forest);
+
+  for (let i = 0; i < TREE_COUNT; i++) {
+    // Even spread across a disk (sqrt keeps density uniform), with a clearing.
+    const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
+    const a = Math.random() * Math.PI * 2;
+
+    // clone(true) shares the heavy geometry but gives each tree its own
+    // transform and morph-influence state so they can sway independently.
+    const inst = template.clone(true);
+    inst.position.set(-center.x, -box.min.y, -center.z); // recentre on trunk base
+
+    const pivot = new THREE.Group();
+    pivot.add(inst);
+    pivot.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    pivot.rotation.y = Math.random() * Math.PI * 2;
+    pivot.scale.setScalar(baseScale * (0.75 + Math.random() * 0.6)); // size variety
+    forest.add(pivot);
+
+    // Each tree sways on its own phase and speed so the canopy never pulses
+    // in lockstep — that's what makes a crowd of trees read as a living forest.
+    if (clip) {
+      const mixer = new THREE.AnimationMixer(inst);
+      const action = mixer.clipAction(clip);
+      action.timeScale = 0.6 + Math.random() * 0.7;
+      action.play();
+      action.time = Math.random() * clip.duration;
+      mixers.push(mixer);
+    }
+  }
+}
+
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -142,7 +204,9 @@ function update(dt) {
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
-  update(Math.min(clock.getDelta(), 0.05));
+  const dt = Math.min(clock.getDelta(), 0.05);
+  update(dt);
+  for (let i = 0; i < mixers.length; i++) mixers[i].update(dt); // sway the trees
   renderer.render(scene, camera);
 }
 
@@ -153,24 +217,40 @@ window.addEventListener('resize', () => {
 });
 
 // ----- Bootstrap -----------------------------------------------------------
-new GLTFLoader().load(
-  './assets/forested_floor.glb',
-  (gltf) => {
-    buildGround(grassMaterialFromGLB(gltf));
-    loadingEl.style.display = 'none';
-    overlay.style.display = 'flex';
-    animate();
-  },
-  (xhr) => {
-    if (xhr.total) loadingEl.textContent =
-      `Loading the forest floor… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-  },
-  (err) => {
-    console.error('Failed to load GLB:', err);
-    // Fallback: plain green field so the world still works.
+const loader = new GLTFLoader();
+const load = (url, onProgress) => new Promise((resolve, reject) =>
+  loader.load(url, resolve, onProgress, reject));
+
+function start() {
+  loadingEl.style.display = 'none';
+  overlay.style.display = 'flex';
+  animate();
+}
+
+(async () => {
+  // 1) Grass ground.
+  try {
+    const floor = await load('./assets/forested_floor.glb', (xhr) => {
+      if (xhr.total) loadingEl.textContent =
+        `Loading the grass… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
+    });
+    buildGround(grassMaterialFromGLB(floor));
+  } catch (err) {
+    console.error('Failed to load grass GLB:', err);
     buildGround(new THREE.MeshStandardMaterial({ color: 0x4f7a32, roughness: 1 }));
-    loadingEl.style.display = 'none';
-    overlay.style.display = 'flex';
-    animate();
   }
-);
+
+  // 2) The forest of animated trees.
+  try {
+    loadingEl.textContent = 'Planting the forest…';
+    const tree = await load('./assets/tree_animate.glb', (xhr) => {
+      if (xhr.total) loadingEl.textContent =
+        `Planting the forest… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
+    });
+    buildForest(tree);
+  } catch (err) {
+    console.error('Failed to load tree GLB:', err); // grass still works without trees
+  }
+
+  start();
+})();
