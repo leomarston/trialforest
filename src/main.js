@@ -24,7 +24,7 @@ const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
 const HOUSE_COUNT    = [7, 11];  // random count range per game
 const HUT_HEIGHT     = 12;   // target height of a wooden hut (a bit bigger now)
 const HUT_COUNT      = [8, 12];
-const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
+const QUONSET_HEIGHT = 11;   // target height of the arched quonset hut (bigger now)
 const QUONSET_COUNT  = [5, 8];
 const randInt = (lo, hi) => lo + Math.floor(Math.random() * (hi - lo + 1));
 // Tiny seeded PRNG (mulberry32) — used to lay the forest out the same each game.
