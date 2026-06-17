@@ -258,6 +258,7 @@ const setKey = (e, down) => {
 document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF' && !e.repeat) setTorch(!torchOn);              // toggle the torch
   if (e.code === 'KeyR' && !e.repeat) startReload();                  // reload
+  if (e.code === 'KeyE' && !e.repeat) toggleNearestDoor();            // open/close a door
   if (e.code === 'BracketLeft'  && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP - 1);
   if (e.code === 'BracketRight' && !e.repeat) setChaseClip(MONSTER_CHASE_CLIP + 1);
   setKey(e, true);
@@ -351,11 +352,15 @@ function buildHuts(hutGltf) {
   placeStructures(hutGltf, HUT_SPOTS, HUT_HEIGHT);
 }
 
+// Openable doors (press E): { mixer, action, dur, x, z, open }
+const doors = [];
+
 // Place a structure model at each spot, normalised to a target height and
 // sitting on the ground, registered as a solid the player/monsters collide with.
 function placeStructures(gltf, spots, height) {
   const template = gltf.scene;
   template.updateWorldMatrix(true, true);
+  const doorClip = (gltf.animations && gltf.animations[0]) || null;
 
   // Normalise: scale to a sensible height and sit the base on the ground.
   const box = new THREE.Box3().setFromObject(template);
@@ -384,7 +389,36 @@ function placeStructures(gltf, spots, height) {
     houseZones.push({ x: spot.x, z: spot.z, r: footprint * 0.6 + 6 });
     // Register it as a solid the player collides against (walls block, doors don't).
     houseColliders.push({ obj: pivot, x: spot.x, z: spot.z });
+
+    // If the model has a door animation, make it openable with E (starts shut).
+    if (doorClip) {
+      const mixer = new THREE.AnimationMixer(inst);
+      const action = mixer.clipAction(doorClip);
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      action.play();
+      action.paused = true; // hold it closed at time 0 until the player opens it
+      doors.push({ mixer, action, dur: doorClip.duration, x: spot.x, z: spot.z, open: false });
+    }
   }
+}
+
+// Swing the nearest door (within reach) open or closed.
+const DOOR_RANGE = 9;
+function toggleNearestDoor() {
+  const p = controls.getObject().position;
+  let best = null, bestD = DOOR_RANGE * DOOR_RANGE;
+  for (const d of doors) {
+    const dd = (d.x - p.x) ** 2 + (d.z - p.z) ** 2;
+    if (dd < bestD) { bestD = dd; best = d; }
+  }
+  if (!best) return;
+  const a = best.action;
+  a.paused = false; a.enabled = true;
+  if (!best.open) { a.timeScale = 1;  if (a.time >= best.dur) a.time = 0; }       // open
+  else            { a.timeScale = -1; if (a.time <= 0) a.time = best.dur; }        // close
+  a.play();
+  best.open = !best.open;
 }
 
 // ----- Mesh-level collision against the houses -----------------------------
@@ -1099,6 +1133,7 @@ function animate() {
   updateGun(dt);                                                // recoil, flash, fire anim
   updatePickups(dt);                                            // ammo / health / batteries
   updateBattery(dt);                                            // torch drains the battery
+  for (let i = 0; i < doors.length; i++) doors[i].mixer.update(dt); // door swings
   renderer.render(scene, camera);
 }
 
