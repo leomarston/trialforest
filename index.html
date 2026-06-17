@@ -89,6 +89,22 @@
     #hurt.flash { animation: hurtflash .45s ease-out; }
     @keyframes hurtflash { 0% { opacity: 1; } 100% { opacity: 0; } }
 
+    /* Blood that creeps in from the corners as health drops. */
+    #bloodvig { position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0;
+      transition: opacity .4s ease;
+      background:
+        radial-gradient(ellipse at center, transparent 42%, rgba(70,0,0,.92) 100%),
+        radial-gradient(circle at 0% 100%,   rgba(110,0,0,.55), transparent 30%),
+        radial-gradient(circle at 100% 0%,   rgba(110,0,0,.55), transparent 30%); }
+
+    /* Diegetic warnings — low, faint, blood-toned. */
+    #warn { position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 6;
+      display: none; text-align: center; color: #b33b2c; pointer-events: none;
+      font-family: 'Architects Daughter', system-ui, sans-serif; font-size: 20px;
+      letter-spacing: .06em; line-height: 1.5; text-shadow: 0 2px 8px rgba(0,0,0,.9);
+      opacity: .9; }
+    body.playing #warn.show { display: block; }
+
     /* Death screen. */
     #death { position: fixed; inset: 0; z-index: 30; display: none;
       align-items: center; justify-content: center; text-align: center;
@@ -101,8 +117,17 @@
     #death .cta { margin-top: 22px; padding: 12px 26px; border-radius: 999px;
       background: #c81e1e; font-weight: 700; display: inline-block; }
 
-    #loading {position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 1.2rem; z-index: 20; background: #05070d; }
+    /* Loading screen — same dark backdrop as the menu, with a bar at the bottom. */
+    #loading { position: fixed; inset: 0; display: none; z-index: 20; overflow: hidden;
+      background:
+        radial-gradient(ellipse 52% 66% at 53% 44%, rgba(78,60,40,.55), rgba(18,14,10,0) 72%),
+        linear-gradient(#0b0a08, #050404); }
+    #loading::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,.86) 100%); }
+    #loadbar { position: absolute; left: 8%; right: 8%; bottom: 8%; height: 14px;
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 3px;
+      overflow: hidden; }
+    #loadfill { height: 100%; width: 0%; background: #9a1414; transition: width .25s ease; }
 
     /* ===================== MAIN MENU ("WOODS") ===================== */
     #menu { position: fixed; inset: 0; z-index: 40; overflow: hidden; background: #05060a;
@@ -178,6 +203,11 @@
       font-size: 21px; letter-spacing: .04em; margin-bottom: 8px; }
     #settings .row label span { color: #ff8a6a; }
     #settings input[type=range] { width: 100%; accent-color: #b81e1e; height: 4px; cursor: pointer; }
+    #settings .row.toggle { display: flex; align-items: center; justify-content: space-between; }
+    #settings .tgl { font-family: inherit; font-size: 20px; letter-spacing: .08em; cursor: pointer;
+      color: #fff; background: #2f7a32; border: 1px solid rgba(255,255,255,.2); border-radius: 10px;
+      padding: .15em .9em; min-width: 92px; }
+    #settings .tgl.off { background: #5a2020; color: #d7b7b7; }
     #settings .back { margin-top: 26px; width: 100%; font-family: inherit; font-size: 26px;
       color: #d9d9d7; background: rgba(50,52,56,.8); border: 1px solid rgba(255,255,255,.13);
       border-radius: 12px; padding: .25em; cursor: pointer; letter-spacing: .06em; }
@@ -194,7 +224,9 @@
   <div id="staminabar"><div id="staminafill"></div></div>
   <div id="ammo">AMMO&nbsp; <span id="ammocount">0</span></div>
   <div id="aniclip" title="press [ and ] to change the monster's walk animation">anim 8</div>
+  <div id="bloodvig"></div>
   <div id="hurt"></div>
+  <div id="warn"></div>
 
   <div id="death">
     <div>
@@ -205,7 +237,7 @@
     </div>
   </div>
 
-  <div id="loading">Loading the forest floor…</div>
+  <div id="loading"><div id="loadbar"><div id="loadfill"></div></div></div>
 
   <div id="overlay" style="display:none">
     <div class="cta">Click to enter the woods</div>
@@ -235,13 +267,13 @@
         <label>Mouse sensitivity <span id="set-sens-val">1.00×</span></label>
         <input id="set-sens" type="range" min="0.2" max="3" step="0.05">
       </div>
-      <div class="row">
-        <label>FX volume <span id="set-fx-val">80%</span></label>
-        <input id="set-fx" type="range" min="0" max="1" step="0.05">
+      <div class="row toggle">
+        <label>FX</label>
+        <button id="set-fx" class="tgl">ON</button>
       </div>
-      <div class="row">
-        <label>Music volume <span id="set-music-val">35%</span></label>
-        <input id="set-music" type="range" min="0" max="1" step="0.05">
+      <div class="row toggle">
+        <label>Music</label>
+        <button id="set-music" class="tgl">ON</button>
       </div>
       <button class="back" id="btn-set-back">BACK</button>
     </div>
@@ -256,6 +288,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=32"></script>
+  <script type="module" src="./src/main.js?v=33"></script>
 </body>
 </html>

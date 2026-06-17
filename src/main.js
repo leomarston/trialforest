@@ -12,6 +12,8 @@ const WALK_SPEED    = 4.5;   // metres/sec — a real walking pace
 const RUN_SPEED     = 9.0;   // sprinting (hold Shift)
 const ACCEL         = 9;     // how quickly you reach top speed (gives weight)
 const PLAYER_MAX_HP = 4;     // hits the player can take before dying
+const JUMP_VEL      = 6.0;   // a small hop
+const GRAVITY       = 20;    // fall acceleration
 
 // ----- Forest constants ----------------------------------------------------
 const TREE_COUNT     = 280;  // a sparser forest — room to breathe between trees
@@ -159,6 +161,20 @@ const battCountEl = document.getElementById('batterycount');
 function updateBatteryHUD() {
   if (battFillEl)  battFillEl.style.width = `${(batteryCharge / BATTERY_MAX) * 100}%`;
   if (battCountEl) battCountEl.textContent = spareBatteries;
+  refreshWarnings();
+}
+
+// Diegetic low-resource warnings, in the game's voice (not generic UI lines).
+const warnEl = document.getElementById('warn');
+function refreshWarnings() {
+  if (!warnEl) return;
+  const lines = [];
+  if (typeof spareBatteries === 'number' && spareBatteries <= 0)
+    lines.push('Your light is dying — the dark is hungry out here.');
+  if (typeof reserveAmmo === 'number' && reserveAmmo <= 0)
+    lines.push('Down to your last rounds. Make them count.');
+  warnEl.innerHTML = lines.join('<br>');
+  warnEl.classList.toggle('show', lines.length > 0);
 }
 
 function applyTorch() {
@@ -196,9 +212,9 @@ const loadingEl = document.getElementById('loading');
 // ----- Main menu ------------------------------------------------------------
 const menuEl = document.getElementById('menu');
 document.getElementById('btn-start')?.addEventListener('click', () => {
-  if (menuEl) menuEl.style.display = 'none'; // reveal the game (loading → click to enter)
+  if (menuEl) menuEl.style.display = 'none';
+  boot(); // only now do we start loading the game
 });
-// SETTINGS and QUIT are non-functional for now.
 
 // ----- Sound effects --------------------------------------------------------
 // Each sound keeps a small pool of <audio> clones so rapid/overlapping plays
@@ -252,35 +268,44 @@ controls.addEventListener('unlock', () => {
   document.body.classList.remove('playing');
 });
 
-// ----- Settings (sensitivity / FX / music) ---------------------------------
+// ----- Settings (sensitivity slider; FX / music on-off) ---------------------
+const MUSIC_VOL = 0.35;
 const settings = Object.assign(
-  { sens: 1.0, fx: 0.8, music: 0.35 },
+  { sens: 1.0, fx: true, music: true },
   JSON.parse(localStorage.getItem('woods-settings') || '{}')
 );
+settings.fx = !!settings.fx; settings.music = !!settings.music; // coerce to booleans
 function applySettings() {
-  controls.pointerSpeed = settings.sens;                 // mouse-look speed
-  for (const c of fxClips) c.a.volume = c.base * settings.fx;
-  music.volume = settings.music;
+  controls.pointerSpeed = settings.sens;                          // mouse-look speed
+  for (const c of fxClips) c.a.volume = c.base * (settings.fx ? 1 : 0);
+  music.volume = settings.music ? MUSIC_VOL : 0;
   localStorage.setItem('woods-settings', JSON.stringify(settings));
 }
 
 const settingsEl = document.getElementById('settings');
-const bind = (id, key, fmt) => {
-  const el = document.getElementById(id);
-  const out = document.getElementById(id + '-val');
+// Sensitivity slider.
+(() => {
+  const el = document.getElementById('set-sens');
+  const out = document.getElementById('set-sens-val');
   if (!el) return;
-  el.value = settings[key];
-  if (out) out.textContent = fmt(settings[key]);
+  el.value = settings.sens;
+  if (out) out.textContent = settings.sens.toFixed(2) + '×';
   el.addEventListener('input', () => {
-    settings[key] = parseFloat(el.value);
-    if (out) out.textContent = fmt(settings[key]);
+    settings.sens = parseFloat(el.value);
+    if (out) out.textContent = settings.sens.toFixed(2) + '×';
     applySettings();
   });
-};
-const pct = (v) => `${Math.round(v * 100)}%`;
-bind('set-sens',  'sens',  (v) => v.toFixed(2) + '×');
-bind('set-fx',    'fx',    pct);
-bind('set-music', 'music', pct);
+})();
+// FX / music on-off toggles.
+function bindToggle(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const render = () => { el.textContent = settings[key] ? 'ON' : 'OFF'; el.classList.toggle('off', !settings[key]); };
+  render();
+  el.addEventListener('click', () => { settings[key] = !settings[key]; render(); applySettings(); });
+}
+bindToggle('set-fx', 'fx');
+bindToggle('set-music', 'music');
 
 document.getElementById('btn-settings')?.addEventListener('click', () => {
   if (settingsEl) settingsEl.style.display = 'flex';
@@ -291,7 +316,7 @@ document.getElementById('btn-set-back')?.addEventListener('click', () => {
 applySettings();
 
 // ----- Input ---------------------------------------------------------------
-const keys = { forward: false, back: false, left: false, right: false, run: false };
+const keys = { forward: false, back: false, left: false, right: false, run: false, jump: false };
 const setKey = (e, down) => {
   switch (e.code) {
     case 'KeyW': case 'ArrowUp':    keys.forward = down; break;
@@ -299,6 +324,7 @@ const setKey = (e, down) => {
     case 'KeyA': case 'ArrowLeft':  keys.left = down;    break;
     case 'KeyD': case 'ArrowRight': keys.right = down;   break;
     case 'ShiftLeft': case 'ShiftRight': keys.run = down; break;
+    case 'Space': keys.jump = down; break;
   }
 };
 document.addEventListener('keydown', (e) => {
@@ -705,9 +731,12 @@ const healthFillEl = document.getElementById('healthfill');
 const hurtEl   = document.getElementById('hurt');
 const deathEl  = document.getElementById('death');
 const finalKillsEl = document.getElementById('finalkills');
+const bloodVigEl = document.getElementById('bloodvig');
 
 function updateHealthBar() {
   if (healthFillEl) healthFillEl.style.width = `${(playerHP / PLAYER_MAX_HP) * 100}%`;
+  // The lower the health, the more blood creeps in from the corners.
+  if (bloodVigEl) bloodVigEl.style.opacity = (1 - playerHP / PLAYER_MAX_HP).toFixed(2);
 }
 
 function hurtPlayer() {
@@ -955,7 +984,7 @@ let magAmmo = MAG_SIZE;          // rounds in the gun
 let reserveAmmo = RESERVE_START; // spare rounds
 let reloading = false, reloadTimer = 0;
 const ammoEl = document.getElementById('ammocount');
-function updateAmmo() { if (ammoEl) ammoEl.textContent = `${magAmmo} / ${reserveAmmo}`; }
+function updateAmmo() { if (ammoEl) ammoEl.textContent = `${magAmmo} / ${reserveAmmo}`; refreshWarnings(); }
 function addAmmo(n) { reserveAmmo += n; updateAmmo(); }
 
 function startReload() {
@@ -1155,6 +1184,7 @@ function updatePickups(dt) {
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();   // horizontal velocity in camera-local axes
 let bobPhase = 0, bobAmp = 0;           // head-bob state for the walk/run feel
+let camY = PLAYER_HEIGHT, velY = 0, onGround = true; // vertical (jump/gravity)
 let stamina = STAMINA_MAX, exhausted = false;
 const staminaFillEl = document.getElementById('staminafill');
 function updateStaminaBar() {
@@ -1205,16 +1235,23 @@ function update(dt) {
   obj.position.z = Math.max(-limit, Math.min(limit, obj.position.z));
 
   // Follow the floor so stairs and raised floors are walkable.
-  const curFeet = obj.position.y - PLAYER_HEIGHT;
+  const curFeet = camY - PLAYER_HEIGHT;
   const floor = floorHeight(obj.position.x, obj.position.z, curFeet);
+  const groundY = floor + PLAYER_HEIGHT;
 
-  // Head-bob: oscillate the eye height while actually moving — gait feel.
+  // Vertical: jump + gravity. Step-ups snap, ledges let you fall.
+  if (keys.jump && onGround) { velY = JUMP_VEL; onGround = false; }
+  velY -= GRAVITY * dt;
+  camY += velY * dt;
+  if (camY <= groundY) { camY = groundY; velY = 0; onGround = true; }
+
+  // Head-bob: oscillate the eye height while actually moving on the ground.
   const horizSpeed = Math.hypot(dx, dz) / dt;
-  const movingNow = horizSpeed > 0.4;
+  const movingNow = onGround && horizSpeed > 0.4;
   if (movingNow) bobPhase += dt * (running ? 13 : 9);
   const targetAmp = movingNow ? (running ? 0.10 : 0.055) : 0;
   bobAmp += (targetAmp - bobAmp) * Math.min(1, dt * 10);
-  obj.position.y = floor + PLAYER_HEIGHT + Math.sin(bobPhase) * bobAmp;
+  obj.position.y = camY + (onGround ? Math.sin(bobPhase) * bobAmp : 0);
 }
 
 // ----- Loop ----------------------------------------------------------------
@@ -1249,8 +1286,20 @@ window.addEventListener('resize', () => {
 
 // ----- Bootstrap -----------------------------------------------------------
 const loader = new GLTFLoader();
-const load = (url, onProgress) => new Promise((resolve, reject) =>
-  loader.load(url, resolve, onProgress, reject));
+const load = (url) => new Promise((resolve, reject) => loader.load(url, resolve, undefined, reject));
+
+const loadFillEl = document.getElementById('loadfill');
+const LOAD_STEPS = 7;
+let loadDone = 0;
+function advanceLoad() {
+  loadDone++;
+  if (loadFillEl) loadFillEl.style.width = `${Math.min(100, (loadDone / LOAD_STEPS) * 100)}%`;
+}
+async function loadStep(url, onLoad) {
+  try { onLoad(await load(url)); }
+  catch (err) { console.error('Failed to load', url, err); }
+  finally { advanceLoad(); }
+}
 
 function start() {
   loadingEl.style.display = 'none';
@@ -1262,90 +1311,34 @@ function start() {
   animate();
 }
 
-(async () => {
-  // 1) Grass ground.
+// Nothing loads until the player presses START.
+let booted = false;
+async function boot() {
+  if (booted) return;
+  booted = true;
+  loadingEl.style.display = 'flex';
+
+  // Grass ground (+ hills) — falls back to a plain green field if it fails.
   try {
-    const floor = await load('./assets/forested_floor.glb', (xhr) => {
-      if (xhr.total) loadingEl.textContent =
-        `Loading the grass… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    });
-    const grassMat = grassMaterialFromGLB(floor);
-    buildGround(grassMat);
-    buildHills(grassMat);
+    const gltf = await load('./assets/forested_floor.glb');
+    const grassMat = grassMaterialFromGLB(gltf);
+    buildGround(grassMat); buildHills(grassMat);
   } catch (err) {
     console.error('Failed to load grass GLB:', err);
     const grassMat = new THREE.MeshStandardMaterial({ color: 0x4f7a32, roughness: 1 });
-    buildGround(grassMat);
-    buildHills(grassMat);
-  }
+    buildGround(grassMat); buildHills(grassMat);
+  } finally { advanceLoad(); }
 
-  // 2) The houses (placed first so the forest can leave room for them).
-  try {
-    loadingEl.textContent = 'Building the houses…';
-    const house = await load('./assets/psx_abandoned_house.glb', (xhr) => {
-      if (xhr.total) loadingEl.textContent =
-        `Building the houses… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    });
-    buildHouses(house);
-  } catch (err) {
-    console.error('Failed to load house GLB:', err);
-  }
-
-  // 2b) The wooden huts.
-  try {
-    loadingEl.textContent = 'Raising the huts…';
-    const hut = await load('./assets/wooden_hut.glb', (xhr) => {
-      if (xhr.total) loadingEl.textContent =
-        `Raising the huts… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    });
-    buildHuts(hut);
-  } catch (err) {
-    console.error('Failed to load hut GLB:', err);
-  }
-
-  // 2c) The quonset huts.
-  try {
-    loadingEl.textContent = 'Raising the quonset huts…';
-    const quonset = await load('./assets/quonset_hut.glb', (xhr) => {
-      if (xhr.total) loadingEl.textContent =
-        `Raising the quonset huts… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    });
-    buildQuonsets(quonset);
-  } catch (err) {
-    console.error('Failed to load quonset GLB:', err);
-  }
-
-  // 3) The forest of animated trees.
-  try {
-    loadingEl.textContent = 'Planting the forest…';
-    const tree = await load('./assets/tree_animate.glb', (xhr) => {
-      if (xhr.total) loadingEl.textContent =
-        `Planting the forest… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
-    });
-    buildForest(tree);
-  } catch (err) {
-    console.error('Failed to load tree GLB:', err); // grass still works without trees
-  }
-
-  // 4) The gun viewmodel.
-  try {
-    loadingEl.textContent = 'Loading the sidearm…';
-    const colt = await load('./assets/colt_m1911.glb');
-    buildGun(colt);
-  } catch (err) {
-    console.error('Failed to load gun GLB:', err);
-  }
-
-  // 5) The monsters that endlessly hunt the player.
-  try {
-    loadingEl.textContent = 'Waking the horde…';
-    const zombie = await load('./assets/zombie_licker.glb');
-    prepareMonsterTemplate(zombie);
-    seedMonsters(); // a few visible from the first moment
+  await loadStep('./assets/psx_abandoned_house.glb', buildHouses);
+  await loadStep('./assets/wooden_hut.glb', buildHuts);
+  await loadStep('./assets/quonset_hut.glb', buildQuonsets);
+  await loadStep('./assets/tree_animate.glb', buildForest);
+  await loadStep('./assets/colt_m1911.glb', buildGun);
+  await loadStep('./assets/zombie_licker.glb', (gltf) => {
+    prepareMonsterTemplate(gltf);
+    seedMonsters();
     if (aniEl) aniEl.textContent = `anim ${MONSTER_CHASE_CLIP} / ${monsterTemplate.clips.length - 1}`;
-  } catch (err) {
-    console.error('Failed to load monster GLB:', err);
-  }
+  });
 
   start();
-})();
+}
