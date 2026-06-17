@@ -1345,6 +1345,11 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
+
+  // Paused (pointer unlocked / pause menu / death) — freeze the whole world,
+  // just keep drawing the last frame behind the menu.
+  if (!controls.isLocked) { renderer.render(scene, camera); return; }
+
   update(dt);
 
   // Only sway trees near the player — distant trees aren't worth the CPU.
