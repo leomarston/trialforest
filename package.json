@@ -1,9 +1,10 @@
 {
   "name": "trial-forest",
   "version": "1.0.0",
-  "description": "First-person grassy field with an impassable boundary (Three.js).",
+  "description": "First-person dark forest horror — Three.js, served as a static site.",
   "type": "module",
   "private": true,
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
