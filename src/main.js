@@ -19,36 +19,16 @@ const FOREST_RADIUS  = 340;  // trees fill the play area up to the foot of the h
 const CLEARING       = 10;   // open breathing room around the player's start
 const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 
-// ----- House constants -----------------------------------------------------
-const HOUSE_HEIGHT   = 18;   // target height of a placed house (world units)
-const HOUSE_SPOTS = [        // empty clearings to drop a house into
-  { x:  150, z:  -80, rot:  0.4 },
-  { x: -160, z:  100, rot: -1.0 },
-  { x:   60, z:  180, rot:  2.4 },
-  { x: -130, z: -150, rot:  1.7 },
-];
+// ----- Structure constants (placed at random each game) ---------------------
+const HOUSE_HEIGHT   = 18;   // target height of an abandoned house
+const HOUSE_COUNT    = 6;    // how many houses spawn (slightly more than before)
+const HUT_HEIGHT     = 9;    // target height of a wooden hut
+const HUT_COUNT      = 7;
+const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
+const QUONSET_COUNT  = 5;
 const houseZones = [];       // footprints trees must keep clear of
 const houseColliders = [];   // { obj, x, z } — house meshes the player collides with
 const PLAYER_RADIUS  = 0.6;  // how far the player's body keeps off the walls
-
-// ----- Wooden hut constants -------------------------------------------------
-const HUT_HEIGHT = 9;        // target height of a wooden hut (smaller than the houses)
-const HUT_SPOTS = [          // spots to drop wooden huts (away from the houses)
-  { x:  -60, z:  -60, rot:  0.8 },
-  { x:  200, z:   90, rot: -0.6 },
-  { x:  -40, z:  210, rot:  2.0 },
-  { x:  120, z: -190, rot:  1.2 },
-  { x: -210, z:  -40, rot: -1.4 },
-];
-
-// ----- Quonset hut constants ------------------------------------------------
-const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
-const QUONSET_SPOTS = [      // spots to drop quonset huts
-  { x:   90, z:   40, rot:  0.3 },
-  { x: -120, z:  170, rot: -0.9 },
-  { x:  -90, z: -200, rot:  1.9 },
-  { x:  210, z: -110, rot: -2.2 },
-];
 
 // ----- Hill ring constants -------------------------------------------------
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
@@ -352,17 +332,42 @@ function buildHills(grassMaterial) {
   scene.add(hills);
 }
 
-// ----- Place the houses in the clearings -----------------------------------
+// ----- Random map layout ----------------------------------------------------
+// Every game lays the buildings out fresh: random positions inside the play
+// area, kept apart from each other and clear of the player's spawn.
+const placedSpots = [];
+function genSpots(count, minDist = 48) {
+  const out = [];
+  const minR = 38;                                   // never on top of the spawn
+  const maxR = Math.min(BOUNDARY_HALF - 30, FOREST_RADIUS - 20);
+  let attempts = 0;
+  while (out.length < count && attempts < count * 60) {
+    attempts++;
+    const a = Math.random() * Math.PI * 2;
+    const r = minR + Math.random() * (maxR - minR);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    let ok = true;
+    for (const s of placedSpots) {
+      if ((s.x - x) ** 2 + (s.z - z) ** 2 < minDist * minDist) { ok = false; break; }
+    }
+    if (!ok) continue;
+    const spot = { x, z, rot: Math.random() * Math.PI * 2 };
+    out.push(spot); placedSpots.push(spot);
+  }
+  return out;
+}
+
+// ----- Place the structures at random spots --------------------------------
 function buildHouses(houseGltf) {
-  placeStructures(houseGltf, HOUSE_SPOTS, HOUSE_HEIGHT);
+  placeStructures(houseGltf, genSpots(HOUSE_COUNT, 55), HOUSE_HEIGHT);
 }
 
 function buildHuts(hutGltf) {
-  placeStructures(hutGltf, HUT_SPOTS, HUT_HEIGHT);
+  placeStructures(hutGltf, genSpots(HUT_COUNT, 44), HUT_HEIGHT);
 }
 
 function buildQuonsets(gltf) {
-  placeStructures(gltf, QUONSET_SPOTS, QUONSET_HEIGHT);
+  placeStructures(gltf, genSpots(QUONSET_COUNT, 44), QUONSET_HEIGHT);
 }
 
 // Openable doors (press E): { mixer, action, dur, x, z, open }
