@@ -19,6 +19,15 @@ const TREE_HEIGHT     = 17;  // target height of an average tree (world units)
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
 const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
 
+// ----- House constants -----------------------------------------------------
+const HOUSE_HEIGHT   = 16;   // target height of a placed house (world units)
+const HOUSE_SPOTS = [        // three empty clearings to drop a house into
+  { x:  140, z:  -70, rot:  0.5 },
+  { x: -160, z:   95, rot: -1.1 },
+  { x:   45, z:  175, rot:  2.4 },
+];
+const houseZones = [];       // footprints trees must keep clear of
+
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -153,6 +162,38 @@ function buildHills(grassMaterial) {
   scene.add(hills);
 }
 
+// ----- Place the houses in the clearings -----------------------------------
+function buildHouses(houseGltf) {
+  const template = houseGltf.scene;
+  template.updateWorldMatrix(true, true);
+
+  // Normalise: scale to a sensible height and sit the base on the ground.
+  const box = new THREE.Box3().setFromObject(template);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const scale = HOUSE_HEIGHT / size.y;
+  const footprint = Math.max(size.x, size.z) * scale; // for the tree-clear radius
+
+  template.traverse((o) => {
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+  });
+
+  for (const spot of HOUSE_SPOTS) {
+    const inst = template.clone(true);
+    inst.position.set(-center.x, -box.min.y, -center.z); // recentre on its base
+
+    const pivot = new THREE.Group();
+    pivot.add(inst);
+    pivot.scale.setScalar(scale);
+    pivot.position.set(spot.x, 0, spot.z);
+    pivot.rotation.y = spot.rot;
+    scene.add(pivot);
+
+    // Reserve a clearing so the forest doesn't grow through the walls.
+    houseZones.push({ x: spot.x, z: spot.z, r: footprint * 0.7 + 6 });
+  }
+}
+
 // The boundary is invisible — nothing is drawn for it. It exists only as the
 // movement clamp far away in update(). Just grass, in every direction.
 
@@ -202,6 +243,14 @@ function buildForest(treeGltf) {
     // Even spread across a disk (sqrt keeps density uniform), with a clearing.
     const r = CLEARING + Math.sqrt(Math.random()) * (FOREST_RADIUS - CLEARING);
     const a = Math.random() * Math.PI * 2;
+    const px = Math.cos(a) * r, pz = Math.sin(a) * r;
+
+    // Keep the house clearings clear — skip any tree landing on a footprint.
+    let blocked = false;
+    for (const z of houseZones) {
+      if ((px - z.x) ** 2 + (pz - z.z) ** 2 < z.r * z.r) { blocked = true; break; }
+    }
+    if (blocked) continue;
 
     // clone(true) shares the heavy geometry but gives each tree its own
     // transform and morph-influence state so they can sway independently.
@@ -210,7 +259,7 @@ function buildForest(treeGltf) {
 
     const pivot = new THREE.Group();
     pivot.add(inst);
-    pivot.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    pivot.position.set(px, 0, pz);
     pivot.rotation.y = Math.random() * Math.PI * 2;
     pivot.scale.setScalar(baseScale * (0.75 + Math.random() * 0.6)); // size variety
     forest.add(pivot);
@@ -301,7 +350,19 @@ function start() {
     buildHills(grassMat);
   }
 
-  // 2) The forest of animated trees.
+  // 2) The houses (placed first so the forest can leave room for them).
+  try {
+    loadingEl.textContent = 'Building the houses…';
+    const house = await load('./assets/old_house.glb', (xhr) => {
+      if (xhr.total) loadingEl.textContent =
+        `Building the houses… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
+    });
+    buildHouses(house);
+  } catch (err) {
+    console.error('Failed to load house GLB:', err);
+  }
+
+  // 3) The forest of animated trees.
   try {
     loadingEl.textContent = 'Planting the forest…';
     const tree = await load('./assets/tree_animate.glb', (xhr) => {
