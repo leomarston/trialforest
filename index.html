@@ -65,13 +65,14 @@
       transition: width .25s ease; }
     body.playing #healthbar { display: block; }
 
-    /* Stamina bar, just below the health bar. */
-    #staminabar { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
-      z-index: 5; display: none; width: 220px; height: 9px; border-radius: 6px;
-      background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); overflow: hidden;
+    /* Sprint/stamina — minimal sliver, bottom-left with a lightning glyph. */
+    #staminabar { position: fixed; bottom: 26px; left: 38px; z-index: 5; display: none;
+      width: 150px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12);
       pointer-events: none; }
-    #staminafill { height: 100%; width: 100%;
-      background: linear-gradient(90deg, #2f7fd6, #67d0ff); transition: width .08s linear; }
+    #staminabar::before { content: "\26A1"; position: absolute; left: -20px; top: -8px;
+      font-size: 13px; opacity: .65; }
+    #staminafill { height: 100%; width: 100%; border-radius: 2px;
+      background: #8fe6c4; box-shadow: 0 0 6px rgba(143,230,196,.55); transition: width .08s linear; }
     body.playing #staminabar { display: block; }
 
     /* Ammo counter, bottom-right. */
@@ -151,6 +152,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=18"></script>
+  <script type="module" src="./src/main.js?v=19"></script>
 </body>
 </html>
