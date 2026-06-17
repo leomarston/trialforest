@@ -41,6 +41,15 @@ const HUT_SPOTS = [          // spots to drop wooden huts (away from the houses)
   { x: -210, z:  -40, rot: -1.4 },
 ];
 
+// ----- Quonset hut constants ------------------------------------------------
+const QUONSET_HEIGHT = 7;    // target height of the arched quonset hut
+const QUONSET_SPOTS = [      // spots to drop quonset huts
+  { x:   90, z:   40, rot:  0.3 },
+  { x: -120, z:  170, rot: -0.9 },
+  { x:  -90, z: -200, rot:  1.9 },
+  { x:  210, z: -110, rot: -2.2 },
+];
+
 // ----- Hill ring constants -------------------------------------------------
 const HILL_RING_R    = 380;  // distance from centre to the wall of hills
 const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) behind
@@ -350,6 +359,10 @@ function buildHouses(houseGltf) {
 
 function buildHuts(hutGltf) {
   placeStructures(hutGltf, HUT_SPOTS, HUT_HEIGHT);
+}
+
+function buildQuonsets(gltf) {
+  placeStructures(gltf, QUONSET_SPOTS, QUONSET_HEIGHT);
 }
 
 // Openable doors (press E): { mixer, action, dur, x, z, open }
@@ -1221,6 +1234,18 @@ function start() {
     buildHuts(hut);
   } catch (err) {
     console.error('Failed to load hut GLB:', err);
+  }
+
+  // 2c) The quonset huts.
+  try {
+    loadingEl.textContent = 'Raising the quonset huts…';
+    const quonset = await load('./assets/quonset_hut.glb', (xhr) => {
+      if (xhr.total) loadingEl.textContent =
+        `Raising the quonset huts… ${Math.round((xhr.loaded / xhr.total) * 100)}%`;
+    });
+    buildQuonsets(quonset);
+  } catch (err) {
+    console.error('Failed to load quonset GLB:', err);
   }
 
   // 3) The forest of animated trees.
