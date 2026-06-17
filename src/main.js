@@ -221,17 +221,17 @@ const loadingEl = document.getElementById('loading');
 
 // ----- Main menu ------------------------------------------------------------
 const menuEl = document.getElementById('menu');
-document.getElementById('btn-start')?.addEventListener('click', () => {
+function beginGame() {            // exactly what pressing START does
   if (menuEl) menuEl.style.display = 'none';
-  controls.lock();  // grab the pointer now (valid gesture) so we drop straight in
-  boot();           // start loading the game
-});
+  controls.lock();               // grab the pointer (valid gesture from the click)
+  boot();                        // show the loading screen and load the game
+}
+document.getElementById('btn-start')?.addEventListener('click', beginGame);
 
-// "Play again" reloads with this flag set — skip the menu and reload the game.
+// "Play again" reloads with this flag, then runs START for you on the fresh page.
 if (sessionStorage.getItem('woods-autostart') === '1') {
   sessionStorage.removeItem('woods-autostart');
-  if (menuEl) menuEl.style.display = 'none';
-  boot();
+  beginGame();
 }
 
 // ----- Sound effects --------------------------------------------------------
