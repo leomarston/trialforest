@@ -40,7 +40,7 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 // if the wrong motion plays.
 let   MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip ([ and ] cycle it live)
 const MONSTER_SPEED       = 5.5;      // a touch slower than your run (escapable)
-const MONSTER_HEIGHT      = 1.85;     // the same size as the player
+const MONSTER_HEIGHT      = 18.5;     // towering — 10× the player's size
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
 const MONSTER_MAX         = 6;        // how many hunt you at once
 const MONSTER_SPAWN_MIN   = 14;       // they appear out of the dark, this close…
