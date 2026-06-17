@@ -117,14 +117,10 @@
     #death .cta { margin-top: 22px; padding: 12px 26px; border-radius: 999px;
       background: #c81e1e; font-weight: 700; display: inline-block; }
 
-    /* Loading screen — same dark backdrop as the menu, with a bar at the bottom. */
+    /* Loading screen — the full menu scene with a bar at the bottom. */
     #loading { position: fixed; inset: 0; display: none; z-index: 20; overflow: hidden;
-      background:
-        radial-gradient(ellipse 52% 66% at 53% 44%, rgba(78,60,40,.55), rgba(18,14,10,0) 72%),
-        linear-gradient(#0b0a08, #050404); }
-    #loading::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-      background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,.86) 100%); }
-    #loadbar { position: absolute; left: 8%; right: 8%; bottom: 8%; height: 14px;
+      background: #05060a; font-family: 'Architects Daughter', system-ui, sans-serif; }
+    #loadbar { position: absolute; left: 8%; right: 8%; bottom: 8%; height: 14px; z-index: 6;
       background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); border-radius: 3px;
       overflow: hidden; }
     #loadfill { height: 100%; width: 0%; background: #9a1414; transition: width .25s ease; }
@@ -237,7 +233,16 @@
     </div>
   </div>
 
-  <div id="loading"><div id="loadbar"><div id="loadfill"></div></div></div>
+  <div id="loading">
+    <div class="m-scene"></div>
+    <div class="m-light"></div>
+    <div class="m-vig"></div>
+    <div class="m-title">
+      <h1>WOODS</h1>
+      <p>Some places aren't meant to be found</p>
+    </div>
+    <div id="loadbar"><div id="loadfill"></div></div>
+  </div>
 
   <div id="overlay" style="display:none">
     <div class="cta">Click to enter the woods</div>
