@@ -12,18 +12,6 @@
     html, body { width: 100%; height: 100%; overflow: hidden; background: #05060a; font-family: system-ui, sans-serif; }
     #app { width: 100vw; height: 100vh; display: block; }
 
-    #overlay {
-      position: fixed; inset: 0; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 18px;
-      background: rgba(20, 40, 20, 0.55); color: #fff; text-align: center;
-      cursor: pointer; z-index: 10; backdrop-filter: blur(2px);
-    }
-    #overlay h1 { font-size: 2.2rem; letter-spacing: 1px; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
-    #overlay p { font-size: 1rem; opacity: .9; max-width: 460px; line-height: 1.5; }
-    #overlay .key { display: inline-block; padding: 2px 8px; margin: 0 2px; border-radius: 5px;
-      background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3); font-weight: 600; }
-    #overlay .cta { margin-top: 10px; padding: 12px 26px; border-radius: 999px;
-      background: #5cb85c; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 
     /* Crosshair — a clean cross reticle with a centre dot. */
     #crosshair { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px;
@@ -121,6 +109,19 @@
       background: rgba(42,44,48,.72); border: 1px solid rgba(255,255,255,.14);
       border-radius: 12px; padding: .25em 1.4em; min-width: 230px; }
     #death .d-btn:hover { background: rgba(72,74,80,.85); color: #fff; }
+
+    /* Pause menu — shares the death-button look. */
+    #pause { position: fixed; inset: 0; z-index: 35; display: none;
+      align-items: center; justify-content: center; text-align: center;
+      background: rgba(5, 6, 10, .9); color: #fff; }
+    #pause > div { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    #pause h2 { font-family: 'Architects Daughter', system-ui, sans-serif; font-size: 3rem;
+      letter-spacing: 6px; color: #e7e2d6; margin-bottom: 14px; }
+    #pause .d-btn { font-family: 'Architects Daughter', system-ui, sans-serif;
+      font-size: 28px; letter-spacing: .05em; color: #d9d9d7; cursor: pointer;
+      background: rgba(42,44,48,.72); border: 1px solid rgba(255,255,255,.14);
+      border-radius: 12px; padding: .25em 1.4em; min-width: 230px; }
+    #pause .d-btn:hover { background: rgba(72,74,80,.85); color: #fff; }
 
     /* Loading screen — the full menu scene with a bar at the bottom. */
     #loading { position: fixed; inset: 0; display: none; z-index: 20; overflow: hidden;
@@ -232,8 +233,17 @@
   <div id="death">
     <div>
       <h1>YOU DIED</h1>
-      <button id="btn-again" class="d-btn">Play again</button>
       <button id="btn-menu" class="d-btn">Main Menu</button>
+    </div>
+  </div>
+
+  <!-- Pause menu (Esc) -->
+  <div id="pause">
+    <div>
+      <h2>PAUSED</h2>
+      <button id="btn-resume" class="d-btn">Resume</button>
+      <button id="btn-pause-settings" class="d-btn">Settings</button>
+      <button id="btn-pause-menu" class="d-btn">Main Menu</button>
     </div>
   </div>
 
@@ -246,10 +256,6 @@
       <p>Some places aren't meant to be found</p>
     </div>
     <div id="loadbar"><div id="loadfill"></div></div>
-  </div>
-
-  <div id="overlay" style="display:none">
-    <div class="cta">Click to enter the woods</div>
   </div>
 
   <!-- Main menu -->
@@ -297,6 +303,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=40"></script>
+  <script type="module" src="./src/main.js?v=41"></script>
 </body>
 </html>

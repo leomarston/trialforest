@@ -67,9 +67,9 @@ const MONSTER_RESPAWN     = 5.0;      // a new monster every 5 seconds (up to th
 const MONSTER_TOUCH       = 3.2;      // how close counts as touching the player
 const DAMAGE_COOLDOWN     = 1.2;      // seconds of grace between hits
 const MONSTER_DESPAWN     = 90;       // if you outrun one past this, recycle it closer
-const MONSTER_RADIUS      = 1.6;      // body radius for wall collision
+const MONSTER_RADIUS      = 0.8;      // slim enough to fit through doorways
 const MONSTER_STEP        = 1.6;      // how tall a step a monster can climb
-const _mHeights = [0.7, 2.2, 4.5];    // body heights sampled for monster wall collision
+const _mHeights = [0.6, 1.5, 2.2];    // capped at 2.2 so doorway lintels don't block them
 
 // ----- Gun / combat constants ----------------------------------------------
 const GUN_SCALE = 0.009;                       // colt model is ~46 units long
@@ -216,7 +216,6 @@ setTorch(true);
 const controls = new PointerLockControls(camera, document.body);
 scene.add(controls.getObject());
 
-const overlay = document.getElementById('overlay');
 const loadingEl = document.getElementById('loading');
 
 // ----- Main menu ------------------------------------------------------------
@@ -275,16 +274,23 @@ function startMusic() {
   music.play().catch(() => { musicStarted = false; }); // retry on a later gesture if blocked
 }
 
-overlay.addEventListener('click', () => { if (!playerDead) controls.lock(); });
+const pauseEl = document.getElementById('pause');
 controls.addEventListener('lock',   () => {
-  overlay.style.display = 'none';
+  if (pauseEl) pauseEl.style.display = 'none';
   document.body.classList.add('playing'); // show crosshair, hearts + kill count
   startMusic();                            // begin the looping ambience
 });
 controls.addEventListener('unlock', () => {
-  if (!playerDead) overlay.style.display = 'flex'; // (death screen handles the dead case)
   document.body.classList.remove('playing');
+  // Pausing (Esc unlocks the pointer) opens the pause menu mid-game.
+  if (booted && !playerDead && pauseEl) pauseEl.style.display = 'flex';
 });
+
+document.getElementById('btn-resume')?.addEventListener('click', () => controls.lock());
+document.getElementById('btn-pause-settings')?.addEventListener('click', () => {
+  if (settingsEl) settingsEl.style.display = 'flex'; // opens over the pause menu
+});
+document.getElementById('btn-pause-menu')?.addEventListener('click', () => location.reload());
 
 // ----- Settings (sensitivity slider; FX / music on-off) ---------------------
 const MUSIC_VOL = 0.35;
@@ -511,16 +517,15 @@ function placeStructures(gltf, spots, height) {
     // Register it as a solid the player collides against (walls block, doors don't).
     houseColliders.push({ obj: pivot, x: spot.x, z: spot.z });
 
-    // If the model has a door animation, make it openable with E (starts shut).
+    // The hut's door stays permanently open — not interactive. Jump the door
+    // animation to its end pose so it's open both visually and for collision.
     if (doorClip) {
       const mixer = new THREE.AnimationMixer(inst);
       const action = mixer.clipAction(doorClip);
-      action.setLoop(THREE.LoopOnce, 1);
-      action.clampWhenFinished = true;
       action.play();
-      action.paused = true; // hold it closed at time 0 until the player opens it
-      doors.push({ mixer, action, dur: doorClip.duration, x: spot.x, z: spot.z, open: false });
+      mixer.setTime(doorClip.duration);   // hold fully open
     }
+    pivot.updateWorldMatrix(true, true);  // bake the open pose into the colliders
   }
 }
 
@@ -781,7 +786,6 @@ let playerDead = false;
 const healthFillEl = document.getElementById('healthfill');
 const hurtEl   = document.getElementById('hurt');
 const deathEl  = document.getElementById('death');
-const finalKillsEl = document.getElementById('finalkills');
 const bloodVigEl = document.getElementById('bloodvig');
 
 function updateHealthBar() {
@@ -805,14 +809,7 @@ function die() {
   controls.unlock();
 }
 
-document.getElementById('btn-again')?.addEventListener('click', () => {
-  sessionStorage.setItem('woods-autostart', '1'); // skip the menu, go straight back in
-  location.reload();
-});
-document.getElementById('btn-menu')?.addEventListener('click', () => {
-  sessionStorage.removeItem('woods-autostart');
-  location.reload();
-});
+document.getElementById('btn-menu')?.addEventListener('click', () => location.reload());
 
 // ----- The monsters that endlessly hunt the player -------------------------
 let monsterTemplate = null;   // { scene, clips, scale, baseY }
@@ -1393,10 +1390,9 @@ async function loadStep(url, onLoad) {
 
 function start() {
   loadingEl.style.display = 'none';
-  // Drop straight into play. The overlay only shows if the pointer-lock didn't
-  // stick (browser dropped it during the load) — a one-click fallback.
-  if (controls.isLocked) overlay.style.display = 'none';
-  else overlay.style.display = 'flex';
+  // Drop straight into play. If the pointer-lock didn't stick during the load,
+  // show the pause menu so a click on Resume grabs it.
+  if (!controls.isLocked && pauseEl) pauseEl.style.display = 'flex';
   updateHealthBar();
   updateStaminaBar();
   updateAmmo();
