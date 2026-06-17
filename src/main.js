@@ -970,7 +970,7 @@ document.addEventListener('mousedown', (e) => {
 
 // ----- Pickups: monster drops + roaming ground ammo ------------------------
 const pickups = [];
-const GROUND_AMMO_COUNT   = 8;    // loose ammo boxes kept around the player
+const GROUND_AMMO_COUNT   = 3;    // loose ammo boxes kept around the player
 const GROUND_AMMO_MIN     = 18;   // spawn this far from the player…
 const GROUND_AMMO_MAX     = 75;   // …to this far
 const GROUND_AMMO_DESPAWN = 120;  // wander past this and it recycles near you
@@ -1047,7 +1047,7 @@ function relocateGround(pk) {
 function dropLoot(x, z) {
   if (Math.random() < 0.10) spawnPickup('health',  x + 0.6, z);        // heart   1/10
   if (Math.random() < 0.10) spawnPickup('ammo',    x - 0.6, z);        // bullets 1/10
-  if (Math.random() < 0.05) spawnPickup('battery', x, z + 0.6);        // energy  1/20
+  if (Math.random() < 1 / 15) spawnPickup('battery', x, z + 0.6);      // energy  1/15
 }
 
 let groundAmmoCount = 0;

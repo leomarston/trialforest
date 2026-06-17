@@ -65,12 +65,10 @@
       transition: width .25s ease; }
     body.playing #healthbar { display: block; }
 
-    /* Sprint/stamina — minimal sliver, bottom-left with a lightning glyph. */
-    #staminabar { position: fixed; bottom: 26px; left: 38px; z-index: 5; display: none;
+    /* Sprint/stamina — minimal sliver, bottom-left. */
+    #staminabar { position: fixed; bottom: 26px; left: 16px; z-index: 5; display: none;
       width: 150px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.12);
       pointer-events: none; }
-    #staminabar::before { content: "\26A1"; position: absolute; left: -20px; top: -8px;
-      font-size: 13px; opacity: .65; }
     #staminafill { height: 100%; width: 100%; border-radius: 2px;
       background: #8fe6c4; box-shadow: 0 0 6px rgba(143,230,196,.55); transition: width .08s linear; }
     body.playing #staminabar { display: block; }
@@ -153,6 +151,6 @@
   }
   </script>
 
-  <script type="module" src="./src/main.js?v=24"></script>
+  <script type="module" src="./src/main.js?v=25"></script>
 </body>
 </html>
