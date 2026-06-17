@@ -722,6 +722,27 @@ function setChaseClip(i) {
   if (aniEl) aniEl.textContent = `anim ${MONSTER_CHASE_CLIP} / ${clips.length - 1}`;
 }
 
+// Pick a heading toward the player that steers around a blocking house. Probes
+// straight ahead; if a wall is close, fans out to either side and takes the
+// clearest direction — so monsters walk around a hut instead of grinding on it.
+const MONSTER_PROBE = MONSTER_RADIUS + 6;
+const _steerOffsets = [0.5, -0.5, 1.0, -1.0, 1.6, -1.6, 2.3, -2.3];
+function monsterHeading(objs, x, z, feet, tx, tz) {
+  if (wallDistG(objs, x, z, feet, tx, tz, MONSTER_PROBE, MONSTER_RADIUS, _mHeights) >= MONSTER_PROBE) {
+    return [tx, tz]; // straight line is clear
+  }
+  const base = Math.atan2(tx, tz);
+  let bestDir = [tx, tz], bestClear = -1;
+  for (const off of _steerOffsets) {
+    const a = base + off;
+    const dx = Math.sin(a), dz = Math.cos(a);
+    const clear = wallDistG(objs, x, z, feet, dx, dz, MONSTER_PROBE, MONSTER_RADIUS, _mHeights);
+    if (clear >= MONSTER_PROBE) return [dx, dz];   // first fully clear way around
+    if (clear > bestClear) { bestClear = clear; bestDir = [dx, dz]; }
+  }
+  return bestDir; // least-blocked direction if nothing is fully clear
+}
+
 const _toPlayer = new THREE.Vector3();
 let damageTimer = 0;
 let growlTimer = 3;
@@ -758,15 +779,17 @@ function updateMonsters(dt) {
       continue;
     }
 
-    m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
     if (dist > MONSTER_TOUCH) {                  // walk relentlessly toward the player
       const step = MONSTER_SPEED * dt;
-      let mvx = (_toPlayer.x / dist) * step;
-      let mvz = (_toPlayer.z / dist) * step;
+      let hx = _toPlayer.x / dist, hz = _toPlayer.z / dist;
 
-      // Collide with the houses (and climb their steps) just like the player.
+      // Steer around houses, then collide/slide and climb their steps.
       const objs = nearHouseObjs(m.root.position.x, m.root.position.z, 55);
       const feet = m.root.position.y - monsterTemplate.footY;
+      if (objs.length) [hx, hz] = monsterHeading(objs, m.root.position.x, m.root.position.z, feet, hx, hz);
+      m.root.rotation.y = Math.atan2(hx, hz) + MONSTER_FACING; // face where it's heading
+
+      let mvx = hx * step, mvz = hz * step;
       if (objs.length) {
         [mvx, mvz] = resolveG(objs, m.root.position.x, m.root.position.z, feet, mvx, mvz, MONSTER_RADIUS, _mHeights);
       }
@@ -775,6 +798,7 @@ function updateMonsters(dt) {
       const floor = objs.length ? floorG(objs, m.root.position.x, m.root.position.z, feet, MONSTER_STEP) : 0;
       m.root.position.y = floor + monsterTemplate.footY;
     } else {
+      m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
       touched = true;                            // close enough to claw at you
     }
     m.mixer.update(dt);
