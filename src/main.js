@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 // ----- World constants -----------------------------------------------------
 const GROUND_HALF   = 700;   // ground only needs to reach under the hill ring
 const BOUNDARY_HALF = 250;   // invisible limit: a 500m × 500m square the player can roam
-const PLAYER_HEIGHT = 1.7;
+const PLAYER_HEIGHT = 1.85;
+const STEP_UP       = 0.6;   // tallest step the player can climb (stairs)
 const WALK_SPEED    = 22;
 const RUN_SPEED     = 44;
 
@@ -36,12 +38,20 @@ const HILL_HEIGHT    = 70;   // tall enough to hide everything (and the sky) beh
 // be read, so the chase/attack clips are selected by index — tweak these two
 // if the wrong motion plays.
 const MONSTER_CHASE_CLIP  = 2;        // index of the walk/run clip
-const MONSTER_ATTACK_CLIP = 0;        // index of the attack/lunge clip
-const MONSTER_SPEED       = 9;        // slower than the player can run (escapable)
+const MONSTER_SPEED       = 8;        // slower than the player can run (escapable)
 const MONSTER_HEIGHT      = 2.4;      // big enough to clearly spot across the clearing
-const MONSTER_SPAWN       = { x: 0, z: -22 };  // right in front of the player at start
-const MONSTER_ATTACK_RANGE = 2.0;     // how close before it lunges
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
+const MONSTER_MAX         = 6;        // how many hunt you at once
+const MONSTER_SPAWN_MIN   = 28;       // they appear out of the dark, this far away…
+const MONSTER_SPAWN_MAX   = 70;       // …to this far
+const MONSTER_RESPAWN     = 1.6;      // seconds between reinforcements
+
+// ----- Gun / combat constants ----------------------------------------------
+const GUN_SCALE = 0.009;                       // colt model is ~46 units long
+const GUN_POS   = new THREE.Vector3( 0.16, -0.15, -0.42);
+const GUN_ROT   = new THREE.Euler(0, -Math.PI / 2, 0); // point the barrel forward
+const SHOOT_RANGE = 300;                       // how far a bullet reaches
+const FIRE_COOLDOWN = 0.18;                     // seconds between shots
 
 // ----- Renderer / scene ----------------------------------------------------
 const canvas = document.getElementById('app');
@@ -80,14 +90,14 @@ scene.add(moon.target);
 // ----- Torch (toggle with F) -----------------------------------------------
 // A handheld spotlight parented to the camera so it always points where you
 // look, plus a faint warm point light so your hands/feet aren't pitch black.
-const torch = new THREE.SpotLight(0xffd8a0, 0, 90, Math.PI / 5, 0.35, 1.2);
+const torch = new THREE.SpotLight(0xfff0c8, 0, 220, Math.PI / 3.4, 0.25, 1.0);
 torch.position.set(0.2, -0.2, 0.2);
 torch.target.position.set(0, 0, -1);
 torch.castShadow = true;
 torch.shadow.mapSize.set(1024, 1024);
 torch.shadow.camera.near = 0.5;
-torch.shadow.camera.far = 90;
-const torchGlow = new THREE.PointLight(0xffb060, 0, 6, 2);
+torch.shadow.camera.far = 220;
+const torchGlow = new THREE.PointLight(0xffd090, 0, 14, 2);
 torchGlow.position.set(0, -0.3, 0);
 
 camera.add(torch);
@@ -96,7 +106,7 @@ camera.add(torchGlow);
 scene.add(camera); // so the camera-parented lights live in the scene graph
 
 let torchOn = true;
-const TORCH_INTENSITY = 5.0, TORCH_GLOW = 0.6;
+const TORCH_INTENSITY = 22.0, TORCH_GLOW = 2.2; // bright, strong beam
 function setTorch(on) {
   torchOn = on;
   torch.intensity = on ? TORCH_INTENSITY : 0;
@@ -112,8 +122,14 @@ const overlay = document.getElementById('overlay');
 const loadingEl = document.getElementById('loading');
 
 overlay.addEventListener('click', () => controls.lock());
-controls.addEventListener('lock',   () => (overlay.style.display = 'none'));
-controls.addEventListener('unlock', () => (overlay.style.display = 'flex'));
+controls.addEventListener('lock',   () => {
+  overlay.style.display = 'none';
+  document.body.classList.add('playing'); // show crosshair + kill count
+});
+controls.addEventListener('unlock', () => {
+  overlay.style.display = 'flex';
+  document.body.classList.remove('playing');
+});
 
 // ----- Input ---------------------------------------------------------------
 const keys = { forward: false, back: false, left: false, right: false, run: false };
@@ -252,6 +268,7 @@ function buildHouses(houseGltf) {
 const _ray = new THREE.Raycaster();
 const _heights = [0.4, 1.0, 1.55];     // knee / waist / head — catch low and high walls
 let _activeColliders = [];             // houses near the player, refreshed each frame
+let _playerFeet = 0;                   // current floor level, so walls are tested per-floor
 
 function refreshColliders(px, pz) {
   _activeColliders.length = 0;
@@ -269,7 +286,7 @@ function wallDistance(ox, oz, dirx, dirz, maxd) {
   for (const off of [-PLAYER_RADIUS, 0, PLAYER_RADIUS]) {
     for (const h of _heights) {
       _ray.set(
-        new THREE.Vector3(ox + perpx * off, h, oz + perpz * off),
+        new THREE.Vector3(ox + perpx * off, _playerFeet + h, oz + perpz * off),
         new THREE.Vector3(dirx, 0, dirz)
       );
       _ray.far = maxd;
@@ -278,6 +295,19 @@ function wallDistance(ox, oz, dirx, dirz, maxd) {
     }
   }
   return min;
+}
+
+// Height of the floor under (x, z), so the player can walk up stairs and stand
+// on floors. Casts down from just above the player's feet; the first surface it
+// finds (within one step) is what they stand on, else the ground at y = 0.
+const _downRay = new THREE.Raycaster();
+const _down = new THREE.Vector3(0, -1, 0);
+function floorHeight(x, z, currentFeet) {
+  if (!_activeColliders.length) return 0;
+  _downRay.set(new THREE.Vector3(x, currentFeet + STEP_UP, z), _down);
+  _downRay.far = STEP_UP + 4;
+  const hits = _downRay.intersectObjects(_activeColliders, true);
+  return hits.length ? hits[0].point.y : 0;
 }
 
 // Resolve an intended (dx, dz) move into one that won't pass through a wall.
@@ -324,6 +354,8 @@ function buildForest(treeGltf) {
       m.side = THREE.DoubleSide;     // leaf cards are lit from both faces
       m.metalness = 0.0;             // foliage/bark is never metallic
       m.roughness = 1.0;
+      m.flatShading = true;          // faceted, low-poly look
+      m.needsUpdate = true;
 
       // The leaves arrive as glTF alpha-MASK (hard binary cutout) — that razor
       // edge is the "paper cut-out" look. Switch the cutout to alpha-to-coverage
@@ -379,66 +411,192 @@ function buildForest(treeGltf) {
   }
 }
 
-// ----- The monster that hunts the player -----------------------------------
-let monster = null;
-let monsterMixer = null;
-const monsterActions = {};
-let monsterState = '';
+// ----- The monsters that endlessly hunt the player -------------------------
+let monsterTemplate = null;   // { scene, clips, scale, baseY }
+const monsters = [];          // live monsters: { root, mixer, action, hitMeshes }
+let respawnTimer = 0;
+let killCount = 0;
+const killsEl = document.getElementById('kills');
 
-function setMonsterAction(name, fade = 0.25) {
-  const next = monsterActions[name];
-  if (!next || monsterState === name) return;
-  for (const key in monsterActions) {
-    if (monsterActions[key] !== next) monsterActions[key].fadeOut(fade);
-  }
-  next.reset().fadeIn(fade).play();
-  monsterState = name;
+function prepareMonsterTemplate(gltf) {
+  const scene0 = gltf.scene;
+  scene0.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(scene0);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const scale = MONSTER_HEIGHT / size.y;
+  monsterTemplate = { scene: scene0, clips: gltf.animations || [], scale, baseY: box.min.y };
 }
 
-function buildMonster(gltf) {
-  monster = gltf.scene;
-  monster.traverse((o) => {
-    if (o.isMesh || o.isSkinnedMesh) { o.castShadow = true; o.frustumCulled = false; }
+function spawnMonster() {
+  if (!monsterTemplate) return;
+  // SkeletonUtils.clone preserves the skinned rig so each monster animates alone.
+  const root = cloneSkinned(monsterTemplate.scene);
+  root.scale.setScalar(monsterTemplate.scale);
+
+  const hitMeshes = [];
+  root.traverse((o) => {
+    if (o.isMesh || o.isSkinnedMesh) {
+      o.castShadow = true;
+      o.frustumCulled = false;
+      hitMeshes.push(o); // bullets test against these
+    }
   });
 
-  // Scale it down to be shorter than the player, then sit its feet on the
-  // ground and drop it at the spawn point.
-  let box = new THREE.Box3().setFromObject(monster);
-  const size = new THREE.Vector3(); box.getSize(size);
-  monster.scale.setScalar(MONSTER_HEIGHT / size.y);
-  box = new THREE.Box3().setFromObject(monster); // recompute after scaling
-  monster.position.set(MONSTER_SPAWN.x, -box.min.y, MONSTER_SPAWN.z);
-  scene.add(monster);
+  // Appear out of the dark, at a random bearing and distance from the player.
+  const p = controls.getObject().position;
+  const ang = Math.random() * Math.PI * 2;
+  const r = MONSTER_SPAWN_MIN + Math.random() * (MONSTER_SPAWN_MAX - MONSTER_SPAWN_MIN);
+  let x = p.x + Math.cos(ang) * r;
+  let z = p.z + Math.sin(ang) * r;
+  const lim = BOUNDARY_HALF - 5;
+  x = Math.max(-lim, Math.min(lim, x));
+  z = Math.max(-lim, Math.min(lim, z));
+  root.position.set(x, -monsterTemplate.baseY * monsterTemplate.scale, z);
+  scene.add(root);
 
-  const clips = gltf.animations || [];
-  const pick = (i) => clips[i] || clips[0];
-  monsterMixer = new THREE.AnimationMixer(monster);
-  monsterActions.chase  = monsterMixer.clipAction(pick(MONSTER_CHASE_CLIP));
-  monsterActions.attack = monsterMixer.clipAction(pick(MONSTER_ATTACK_CLIP));
-  setMonsterAction('chase');
+  const mixer = new THREE.AnimationMixer(root);
+  const clips = monsterTemplate.clips;
+  const clip = clips[MONSTER_CHASE_CLIP] || clips[0];
+  let action = null;
+  if (clip) { action = mixer.clipAction(clip); action.time = Math.random() * clip.duration; action.play(); }
+
+  monsters.push({ root, mixer, action, hitMeshes });
 }
 
 const _toPlayer = new THREE.Vector3();
-function updateMonster(dt) {
-  if (!monster) return;
-  const p = controls.getObject().position;
-  _toPlayer.set(p.x - monster.position.x, 0, p.z - monster.position.z);
-  const dist = _toPlayer.length();
-
-  // Always turn to face the player.
-  monster.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
-
-  if (dist > MONSTER_ATTACK_RANGE) {
-    setMonsterAction('chase');
-    const step = Math.min(MONSTER_SPEED * dt, dist - MONSTER_ATTACK_RANGE);
-    monster.position.x += (_toPlayer.x / dist) * step;
-    monster.position.z += (_toPlayer.z / dist) * step;
-  } else {
-    setMonsterAction('attack'); // close enough — lunge
+function updateMonsters(dt) {
+  // Keep the horde topped up.
+  if (monsterTemplate && monsters.length < MONSTER_MAX) {
+    respawnTimer -= dt;
+    if (respawnTimer <= 0) { spawnMonster(); respawnTimer = MONSTER_RESPAWN; }
   }
 
-  monsterMixer.update(dt);
+  const p = controls.getObject().position;
+  for (const m of monsters) {
+    _toPlayer.set(p.x - m.root.position.x, 0, p.z - m.root.position.z);
+    const dist = _toPlayer.length() || 1;
+    m.root.rotation.y = Math.atan2(_toPlayer.x, _toPlayer.z) + MONSTER_FACING;
+    const step = MONSTER_SPEED * dt;            // walk relentlessly toward the player
+    m.root.position.x += (_toPlayer.x / dist) * step;
+    m.root.position.z += (_toPlayer.z / dist) * step;
+    m.mixer.update(dt);
+  }
 }
+
+function killMonster(m) {
+  explodeAt(m.root.position);
+  scene.remove(m.root);
+  m.mixer.stopAllAction();
+  const i = monsters.indexOf(m);
+  if (i >= 0) monsters.splice(i, 1);
+  killCount++;
+  if (killsEl) killsEl.textContent = killCount;
+}
+
+// ----- Gore / explosion effect ---------------------------------------------
+const effects = [];
+const _gibGeo = new THREE.IcosahedronGeometry(0.18, 0);
+const _gibMat = new THREE.MeshStandardMaterial({ color: 0x8a1111, roughness: 0.85, emissive: 0x330303 });
+
+function explodeAt(pos) {
+  const group = new THREE.Group();
+  const parts = [];
+  for (let i = 0; i < 26; i++) {
+    const gib = new THREE.Mesh(_gibGeo, _gibMat);
+    gib.position.copy(pos);
+    gib.position.y += 1.0;
+    const v = new THREE.Vector3(
+      (Math.random() - 0.5) * 9,
+      Math.random() * 8 + 2,
+      (Math.random() - 0.5) * 9
+    );
+    gib.scale.setScalar(0.5 + Math.random());
+    group.add(gib);
+    parts.push({ mesh: gib, v });
+  }
+  // A brief red flash of light at the burst.
+  const flash = new THREE.PointLight(0xff3020, 30, 16, 2);
+  flash.position.copy(pos); flash.position.y += 1.2;
+  group.add(flash);
+  scene.add(group);
+  effects.push({ group, parts, flash, life: 0, max: 0.9 });
+}
+
+function updateEffects(dt) {
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const e = effects[i];
+    e.life += dt;
+    for (const part of e.parts) {
+      part.v.y -= 22 * dt;                 // gravity
+      part.mesh.position.addScaledVector(part.v, dt);
+      part.mesh.rotation.x += dt * 6;
+      part.mesh.rotation.y += dt * 4;
+    }
+    if (e.flash) e.flash.intensity = Math.max(0, 30 * (1 - e.life / 0.25));
+    if (e.life >= e.max) {
+      scene.remove(e.group);
+      effects.splice(i, 1);
+    }
+  }
+}
+
+// ----- The gun (viewmodel + shooting) --------------------------------------
+let gun = null, gunMixer = null, fireAction = null;
+let fireCooldown = 0;
+const muzzleFlash = new THREE.PointLight(0xffd070, 0, 12, 2);
+muzzleFlash.position.set(0.16, -0.12, -0.7);
+camera.add(muzzleFlash);
+
+function buildGun(gltf) {
+  gun = gltf.scene;
+  gun.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; o.renderOrder = 999; } });
+  gun.scale.setScalar(GUN_SCALE);
+  gun.position.copy(GUN_POS);
+  gun.rotation.copy(GUN_ROT);
+  camera.add(gun); // parent to the camera so it's a first-person viewmodel
+
+  const fire = (gltf.animations || []).find((c) => /fire/i.test(c.name)) || gltf.animations?.[0];
+  if (fire) {
+    gunMixer = new THREE.AnimationMixer(gun);
+    fireAction = gunMixer.clipAction(fire);
+    fireAction.setLoop(THREE.LoopOnce);
+    fireAction.clampWhenFinished = true;
+  }
+}
+
+const _shootRay = new THREE.Raycaster();
+_shootRay.far = SHOOT_RANGE;
+const _screenCentre = new THREE.Vector2(0, 0);
+
+function shoot() {
+  if (fireCooldown > 0) return;
+  fireCooldown = FIRE_COOLDOWN;
+
+  // Muzzle flash + fire animation + recoil kick.
+  muzzleFlash.intensity = 12;
+  if (fireAction) { fireAction.reset(); fireAction.play(); }
+  if (gun) gun.position.z = GUN_POS.z + 0.06; // kicked back; eased forward in update
+
+  // Hitscan from the centre of the screen.
+  _shootRay.setFromCamera(_screenCentre, camera);
+  let best = null, bestDist = Infinity;
+  for (const m of monsters) {
+    const hits = _shootRay.intersectObjects(m.hitMeshes, false);
+    if (hits.length && hits[0].distance < bestDist) { bestDist = hits[0].distance; best = m; }
+  }
+  if (best) killMonster(best);
+}
+
+function updateGun(dt) {
+  if (fireCooldown > 0) fireCooldown -= dt;
+  if (muzzleFlash.intensity > 0) muzzleFlash.intensity = Math.max(0, muzzleFlash.intensity - 60 * dt);
+  if (gun) gun.position.z += (GUN_POS.z - gun.position.z) * Math.min(1, dt * 12); // ease recoil back
+  if (gunMixer) gunMixer.update(dt);
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && controls.isLocked) shoot();
+});
 
 // ----- Movement with boundary clamp ----------------------------------------
 const velocity = new THREE.Vector3();
@@ -464,6 +622,7 @@ function update(dt) {
     controls.moveForward(-velocity.z * dt);
 
     refreshColliders(prevX, prevZ);
+    _playerFeet = obj.position.y - PLAYER_HEIGHT; // test walls at the current floor level
     let [dx, dz] = resolveMove(prevX, prevZ, obj.position.x - prevX, obj.position.z - prevZ);
     obj.position.x = prevX + dx;
     obj.position.z = prevZ + dz;
@@ -472,7 +631,11 @@ function update(dt) {
     const limit = BOUNDARY_HALF;
     obj.position.x = Math.max(-limit, Math.min(limit, obj.position.x));
     obj.position.z = Math.max(-limit, Math.min(limit, obj.position.z));
-    obj.position.y = PLAYER_HEIGHT;
+
+    // Follow the floor so stairs and raised floors are walkable.
+    const curFeet = obj.position.y - PLAYER_HEIGHT;
+    const floor = floorHeight(obj.position.x, obj.position.z, curFeet);
+    obj.position.y = floor + PLAYER_HEIGHT;
   }
 }
 
@@ -483,7 +646,9 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
   for (let i = 0; i < mixers.length; i++) mixers[i].update(dt); // sway the trees
-  updateMonster(dt);                                            // hunt the player
+  updateMonsters(dt);                                           // hunt the player
+  updateEffects(dt);                                            // gibs + flashes
+  updateGun(dt);                                                // recoil, flash, fire anim
   renderer.render(scene, camera);
 }
 
@@ -545,11 +710,20 @@ function start() {
     console.error('Failed to load tree GLB:', err); // grass still works without trees
   }
 
-  // 3) The monster that chases the player.
+  // 4) The gun viewmodel.
   try {
-    loadingEl.textContent = 'Waking the monster…';
+    loadingEl.textContent = 'Loading the sidearm…';
+    const colt = await load('./assets/colt_m1911.glb');
+    buildGun(colt);
+  } catch (err) {
+    console.error('Failed to load gun GLB:', err);
+  }
+
+  // 5) The monsters that endlessly hunt the player.
+  try {
+    loadingEl.textContent = 'Waking the horde…';
     const zombie = await load('./assets/zombie_licker.glb');
-    buildMonster(zombie);
+    prepareMonsterTemplate(zombie);
   } catch (err) {
     console.error('Failed to load monster GLB:', err);
   }

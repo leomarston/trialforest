@@ -22,12 +22,32 @@
     #overlay .cta { margin-top: 10px; padding: 12px 26px; border-radius: 999px;
       background: #5cb85c; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 
+    /* Crosshair — a clean cross reticle with a centre dot. */
+    #crosshair { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px;
+      transform: translate(-50%, -50%); z-index: 4; pointer-events: none; display: none; }
+    #crosshair::before, #crosshair::after {
+      content: ""; position: absolute; background: rgba(255,255,255,.85);
+      box-shadow: 0 0 2px rgba(0,0,0,.9);
+    }
+    #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+    body.playing #crosshair { display: block; }
+
+    #killcount { position: fixed; top: 14px; right: 16px; z-index: 5; display: none;
+      color: #ff6a5a; font-weight: 800; font-size: 18px; letter-spacing: 1px;
+      text-shadow: 0 2px 6px rgba(0,0,0,.8); pointer-events: none; }
+    #killcount #kills { color: #fff; }
+    body.playing #killcount { display: block; }
+
     #loading {position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-      color: #fff; font-size: 1.2rem; z-index: 20; background: #2d4a2d; }
+      color: #fff; font-size: 1.2rem; z-index: 20; background: #05070d; }
   </style>
 </head>
 <body>
   <canvas id="app"></canvas>
+
+  <div id="crosshair" aria-hidden="true"></div>
+  <div id="killcount">KILLS&nbsp; <span id="kills">0</span></div>
 
   <div id="loading">Loading the forest floor…</div>
 
