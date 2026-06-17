@@ -22,20 +22,7 @@
     #overlay .cta { margin-top: 10px; padding: 12px 26px; border-radius: 999px;
       background: #5cb85c; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
 
-    #hud {
-      position: fixed; top: 14px; left: 14px; z-index: 5; color: #fff;
-      font-size: 13px; line-height: 1.6; text-shadow: 0 1px 3px rgba(0,0,0,.7);
-      pointer-events: none;
-    }
-    #warning {
-      position: fixed; bottom: 38px; left: 50%; transform: translateX(-50%);
-      z-index: 6; color: #fff; background: rgba(160, 40, 40, .85);
-      padding: 10px 20px; border-radius: 999px; font-weight: 700; font-size: 14px;
-      opacity: 0; transition: opacity .25s; pointer-events: none;
-      box-shadow: 0 6px 18px rgba(0,0,0,.35);
-    }
-    #warning.show { opacity: 1; }
-    #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    #loading {position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       color: #fff; font-size: 1.2rem; z-index: 20; background: #2d4a2d; }
   </style>
 </head>
@@ -46,8 +33,8 @@
 
   <div id="overlay" style="display:none">
     <h1>🌲 Trial Forest</h1>
-    <p>A vast open meadow. Wander freely — but an unseen edge marks the boundary of this world.
-       You can see the green beyond, yet you cannot cross.</p>
+    <p>A vast open meadow of grass stretching in every direction. Wander freely —
+       far, far away there is an unseen edge you cannot cross.</p>
     <p>
       Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
       &nbsp;·&nbsp; Look: <span class="key">Mouse</span>
@@ -56,9 +43,6 @@
     </p>
     <div class="cta">Click to enter</div>
   </div>
-
-  <div id="hud"></div>
-  <div id="warning">⛔ You cannot pass beyond the boundary</div>
 
   <script type="importmap">
   {
