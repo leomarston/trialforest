@@ -11,13 +11,15 @@ distance), but movement is hard-clamped so you simply can't cross.
 
 ## Run it
 
-It's a static site (ES modules + import maps), so any static server works:
-
 ```bash
-# from the repo root
-python3 -m http.server 8000
-# then open http://localhost:8000
+npm start          # serves on http://localhost:3000 (or $PORT)
 ```
+
+### Deploy on Railway
+
+Railway auto-detects Node, installs, and runs `npm start`. The included
+zero-dependency `server.js` binds to Railway's `$PORT` and serves the static
+files — no extra config needed. Just point Railway at this repo and deploy.
 
 Click to enter, then:
 

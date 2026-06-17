@@ -1,0 +1,13 @@
+{
+  "name": "trial-forest",
+  "version": "1.0.0",
+  "description": "First-person grassy field with an impassable boundary (Three.js).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
