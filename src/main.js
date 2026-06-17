@@ -43,10 +43,10 @@ let   MONSTER_CHASE_CLIP  = 8;        // the crawl-on-all-fours clip ([ and ] cy
 const MONSTER_SPEED       = 5.5;      // a touch slower than your run (escapable)
 const MONSTER_HEIGHT      = 18.5;     // towering — 10× the player's size
 const MONSTER_FACING      = 0;        // yaw offset so it faces the player (flip by Math.PI if backwards)
-const MONSTER_MAX         = 3;        // how many hunt you at once
+const MONSTER_MAX         = 7;        // most that can hunt you at once
 const MONSTER_SPAWN_MIN   = 22;       // they appear out of the dark, this close…
 const MONSTER_SPAWN_MAX   = 50;       // …to this far (inside the fog so you see them)
-const MONSTER_RESPAWN     = 2.5;      // seconds between reinforcements
+const MONSTER_RESPAWN     = 5.0;      // a new monster every 5 seconds (up to the max)
 const MONSTER_TOUCH       = 3.2;      // how close counts as touching the player
 const DAMAGE_COOLDOWN     = 1.2;      // seconds of grace between hits
 const MONSTER_DESPAWN     = 90;       // if you outrun one past this, recycle it closer
@@ -646,9 +646,9 @@ function spawnMonster(angleOverride) {
   monsters.push({ root, mixer, action, hitMeshes });
 }
 
-// Seed the starting monsters at random bearings around the player (not in front).
+// Seed one monster at the start; the rest arrive every 5 seconds up to the max.
 function seedMonsters() {
-  for (let i = 0; i < MONSTER_MAX; i++) spawnMonster(Math.random() * Math.PI * 2);
+  spawnMonster(Math.random() * Math.PI * 2);
 }
 
 // Swap the walk/run clip on every monster — wired to [ and ] so the right clip
