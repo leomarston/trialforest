@@ -832,6 +832,12 @@ function prepareMonsterTemplate(gltf) {
                       footY: -box.min.y * scale };
 }
 
+// Monster health grows 50% every 50 kills (in whole hits): 1 → 2 → 3 → 5 …
+function monsterHP() {
+  const tier = Math.floor(killCount / 50);
+  return Math.max(1, Math.ceil(Math.pow(1.5, tier)));
+}
+
 function spawnMonster(angleOverride) {
   if (!monsterTemplate) return;
   // SkeletonUtils.clone preserves the skinned rig so each monster animates alone.
@@ -878,7 +884,8 @@ function spawnMonster(angleOverride) {
   let action = null;
   if (clip) { action = mixer.clipAction(clip); action.time = Math.random() * clip.duration; if (red) action.timeScale = 2; action.play(); }
 
-  monsters.push({ root, mixer, action, hitMeshes, speed: MONSTER_SPEED * (red ? 2 : 1), dmg: red ? 2 : 1 });
+  const hp = monsterHP();
+  monsters.push({ root, mixer, action, hitMeshes, speed: MONSTER_SPEED * (red ? 2 : 1), dmg: red ? 2 : 1, hp });
 }
 
 // Seed one monster at the start; the rest arrive every 5 seconds up to the max.
@@ -1105,7 +1112,7 @@ function shoot() {
     const hits = _shootRay.intersectObjects(m.hitMeshes, false);
     if (hits.length && hits[0].distance < bestDist) { bestDist = hits[0].distance; best = m; }
   }
-  if (best) killMonster(best);
+  if (best) { best.hp -= 1; if (best.hp <= 0) killMonster(best); }
 }
 
 function updateGun(dt) {
